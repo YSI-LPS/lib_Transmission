@@ -31,12 +31,12 @@
 #define TCP_NETMASK             "255.255.255.0"
 #define TCP_GATEWAY             "192.168.1.1"
 #define TCP_PORT                80
-#define TCP_CLIENT_TIMEOUT      100                             // client configue bloquante avec timeout sinon limite de transmission a 1072 octets
-#define SMTP_SERVER             "129.175.212.70"                //"smtp.u-psud.fr" oblige a utiliser DNS avec eth.getHostByName("smtp.u-psud.fr")
+#define TCP_CLIENT_TIMEOUT      100                 // configue client bloquante avec timeout sinon limite de transmission a 1072 octets
+#define SMTP_SERVER             "129.175.212.70"    // smtp.u-psud.fr" oblige a utiliser DNS avec eth.getHostByName("smtp.u-psud.fr")
 
-enum enumCOM            { TCP, SERIAL };
-enum enumCOLOR          { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
-struct typeTransmission { bool TCP; string buffer[2]; bool HTTP; bool BREAK; };
+enum enumTRANSMISSION   { TCP, SERIAL };
+enum enumSTATUS         { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
+struct typeTransmission { string buffer[2]; enumSTATUS status; bool TCP; bool HTTP; bool BREAK; };
 
 /** Transmission class
  */
@@ -49,7 +49,7 @@ class Transmission
         * @param 
         * @param 
         */
-        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, EventQueue *queue, void(*com_init)(void), void(*com_processing)(string, const enumCOM&));
+        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, EventQueue *queue, void(*_init)(void), void(*_processing)(string, const enumTRANSMISSION&));
         
         /** 
         *
@@ -58,32 +58,26 @@ class Transmission
         * @returns none
         */ 
         /* communication */
-        enumCOLOR       recv(void);
-        nsapi_error_t   send(const string& BUFFER, const enumCOM& TYPE);
+        enumSTATUS      recv(void);
+        nsapi_error_t   send(const string& BUFFER, const enumTRANSMISSION& TYPE);
+        bool            smtp(const char* MAIL, const char* FROM="", const char* SUBJECT="", const char* DATA="");
 
-        bool            sendSMTP(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA);
-        bool            checkSMTP(const char* MAIL);
-
-        intptr_t        eth_status(const string&, const intptr_t&);
-        nsapi_error_t   eth_error(const string& SOURCE, const nsapi_error_t& CODE);
-
-        typeTransmission message = { true, {"", ""}, false, false };
+        typeTransmission message = { {"", ""}, RED_DISCONNECTED, true, false, false };
     private:
-        void(*fn_com_init)(void);
-        void(*fn_com_processing)(string, const enumCOM&);
-
         UnbufferedSerial *_serial;
         EthernetInterface *_eth;
         EventQueue *_queue;
         TCPSocket *clientTCP = NULL;
         TCPSocket serverTCP;
 
-        enumCOLOR statusCOLOR = RED_DISCONNECTED;
+        void            (*fn_init)(void);
+        void            (*fn_processing)(string, const enumTRANSMISSION&);
 
         /* EthernetInterface */
         bool            eth_connect(void);
         void            eth_event(nsapi_event_t, intptr_t);
-        
+        intptr_t        eth_status(const string&, const intptr_t&);
+        nsapi_error_t   eth_error(const string& SOURCE, const nsapi_error_t& CODE);
 
         /* serverTCP */
         bool            serverTCP_connect(void);
