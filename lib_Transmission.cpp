@@ -105,7 +105,7 @@ void Transmission::serverTCP_accept(void)
     }
 }
 
-enumSTATUS Transmission::recv(void)
+enumTRANSTATUS Transmission::recv(void)
 {
     if(eth_connect())
     {
