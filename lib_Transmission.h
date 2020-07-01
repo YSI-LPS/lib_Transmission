@@ -32,11 +32,11 @@
 #define TCP_GATEWAY             "192.168.1.1"
 #define TCP_PORT                80
 #define TCP_CLIENT_TIMEOUT      100                 // configue client bloquante avec timeout sinon limite de transmission a 1072 octets
-#define SMTP_SERVER             "129.175.212.70"    // smtp.u-psud.fr" oblige a utiliser DNS avec eth.getHostByName("smtp.u-psud.fr")
+#define SMTP_SERVER             "129.175.212.70"    // smtp.u-psud.fr oblige a utiliser DNS avec eth.getHostByName("smtp.u-psud.fr")
 
 enum enumTRANSMISSION   { TCP, SERIAL };
-enum enumSTATUS         { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
-struct typeTransmission { string buffer[2]; enumSTATUS status; bool TCP; bool HTTP; bool BREAK; };
+enum enumTRANSTATUS     { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
+struct typeTransmission { string buffer[2]; enumTRANSTATUS status; bool TCP; bool HTTP; bool BREAK; };
 
 /** Transmission class
  */
@@ -58,17 +58,17 @@ class Transmission
         * @returns none
         */ 
         /* communication */
-        enumSTATUS      recv(void);
+        enumTRANSTATUS  recv(void);
         nsapi_error_t   send(const string& BUFFER, const enumTRANSMISSION& TYPE);
         bool            smtp(const char* MAIL, const char* FROM="", const char* SUBJECT="", const char* DATA="");
 
-        typeTransmission message = { {"", ""}, RED_DISCONNECTED, true, false, false };
+        typeTransmission    message = { {"", ""}, RED_DISCONNECTED, true, false, false };
     private:
-        UnbufferedSerial *_serial;
-        EthernetInterface *_eth;
-        EventQueue *_queue;
-        TCPSocket *clientTCP = NULL;
-        TCPSocket serverTCP;
+        UnbufferedSerial    *_serial;
+        EthernetInterface   *_eth;
+        EventQueue          *_queue;
+        TCPSocket           *clientTCP = NULL;
+        TCPSocket           serverTCP;
 
         void            (*fn_init)(void);
         void            (*fn_processing)(string, const enumTRANSMISSION&);
