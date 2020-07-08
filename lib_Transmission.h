@@ -26,23 +26,19 @@
 #include "EthernetInterface.h"
 #include <sstream>
 
-#define TCP_SET_DHCP            true
-#define TCP_IP                  "192.168.1.25"
-#define TCP_NETMASK             "255.255.255.0"
-#define TCP_GATEWAY             "192.168.1.1"
-#define TCP_PORT                80
 #define TCP_CLIENT_TIMEOUT      100                 // configue client bloquante avec timeout sinon limite de transmission a 1072 octets
 #define SMTP_SERVER             "129.175.212.70"    // smtp.u-psud.fr oblige a utiliser DNS avec eth.getHostByName("smtp.u-psud.fr")
 
-enum enumTRANSMISSION   { TCP, SERIAL };
-enum enumTRANSTATUS     { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
-struct typeTransmission { string buffer[2]; enumTRANSTATUS status; bool TCP; bool HTTP; bool BREAK; };
+enum    enumTRANSMISSION    { TCP, SERIAL };
+enum    enumTRANSTATUS      { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
+struct  typeTRANSMISSION    { string buffer[2]; enumTRANSTATUS status; bool TCP; bool HTTP; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t PORT; };
 
 /** Transmission class
  */
 class Transmission
 {
     public:
+        uint16_t _PORT = 80;
         /** make new Transmission instance
         * connected to 
         *
@@ -58,17 +54,20 @@ class Transmission
         * @returns none
         */ 
         /* communication */
+        void            set(bool TCP, const char* IP="", uint16_t PORT=80);
+        string          get(void);
         enumTRANSTATUS  recv(void);
         nsapi_error_t   send(const string& BUFFER, const enumTRANSMISSION& TYPE);
         bool            smtp(const char* MAIL, const char* FROM="", const char* SUBJECT="", const char* DATA="");
+        void            http(void);
 
-        typeTransmission    message = { {"", ""}, RED_DISCONNECTED, true, false, false };
     private:
+        typeTRANSMISSION    message = { {"", ""}, RED_DISCONNECTED, false, false, false, false, false, "", 80 };
         UnbufferedSerial    *_serial;
         EthernetInterface   *_eth;
         EventQueue          *_queue;
-        TCPSocket           *clientTCP = NULL;
-        TCPSocket           serverTCP;
+        TCPSocket           *_clientTCP = NULL;
+        TCPSocket           _serverTCP;
 
         void            (*fn_init)(void);
         void            (*fn_processing)(string, const enumTRANSMISSION&);
