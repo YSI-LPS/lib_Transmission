@@ -9,6 +9,33 @@ Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, Eve
     fn_processing = _processing;
 }
 
+void Transmission::set(bool TCP, const char* IP, uint16_t PORT)
+{
+    if(message.TCP && TCP)
+    {
+        if(message.PORT != PORT)
+        {
+            message.CONNECT = false;
+            _serverTCP.sigio(NULL);
+            eth_error("serverTCP_close", _serverTCP.close());
+        }
+        eth_error("Ethernet_disconnect", _eth->disconnect());
+    }
+    message.TCP = TCP;
+    message.IP = IP;
+    message.PORT = PORT;
+    message.DHCP = message.IP.empty();
+}
+
+string Transmission::get(void)
+{
+    SocketAddress ip;
+    _eth->get_ip_address(&ip);
+    string address(ip.get_ip_address()?ip.get_ip_address():"0.0.0.0");
+    address += ":" + to_string(message.PORT);
+    return address;
+}
+
 bool Transmission::eth_connect(void)
 {
     if(message.TCP)
@@ -19,8 +46,8 @@ bool Transmission::eth_connect(void)
                 if(message.status == RED_DISCONNECTED)
                 {
                     eth_error("Ethernet_blocking", _eth->set_blocking(false));
-                    eth_error("Ethernet_dhcp", _eth->set_dhcp(TCP_SET_DHCP));
-                    if(!TCP_SET_DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(TCP_IP), SocketAddress(TCP_NETMASK), SocketAddress(TCP_GATEWAY)));
+                    eth_error("Ethernet_dhcp", _eth->set_dhcp(message.DHCP));
+                    if(!message.DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(message.IP.c_str()), SocketAddress("255.255.255.0"), SocketAddress("192.168.1.1")));
                     eth_error("Ethernet_connect", _eth->connect());
                 }
             break;
@@ -32,7 +59,7 @@ bool Transmission::eth_connect(void)
                     _eth->attach(callback(this, &Transmission::eth_event));
                 }
             break;
-            case NSAPI_STATUS_GLOBAL_UP: return serverTCP_connect(); break;
+            case NSAPI_STATUS_GLOBAL_UP: return message.CONNECT; break;
             default: break;
         }
     }
@@ -47,28 +74,30 @@ void Transmission::eth_event(nsapi_event_t status, intptr_t param)
     {
         case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
         case NSAPI_STATUS_CONNECTING:
-        if(message.status == BLUE_CLIENT) eth_error("clientTCP_disconnect", clientTCP->close());
+        if(message.status == BLUE_CLIENT) eth_error("clientTCP_disconnect", _clientTCP->close());
                                         message.status = YELLOW_CONNECTING; break;
-        case NSAPI_STATUS_GLOBAL_UP:    _queue->call(this, &Transmission::serverTCP_accept);
-                                        message.status = GREEN_GLOBAL_UP;   break;
+        case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;
+                                        if(message.CONNECT)
+                                             serverTCP_event();
+                                        else serverTCP_connect();           break;
         default:                                                            break;
     }
 }
 
 bool Transmission::serverTCP_connect(void)
 {
-    static bool serverTCP_connect = false;
-    if(!serverTCP_connect)
-        if (eth_error("serverTCP_open", serverTCP.open(_eth)) == NSAPI_ERROR_OK)
-            if (eth_error("serverTCP_bind", serverTCP.bind(TCP_PORT)) == NSAPI_ERROR_OK)
-                if (eth_error("serverTCP_listen", serverTCP.listen()) == NSAPI_ERROR_OK)
+    if(!message.CONNECT)
+        if(eth_error("serverTCP_open", _serverTCP.open(_eth)) == NSAPI_ERROR_OK)
+            if(eth_error("serverTCP_bind", _serverTCP.bind(message.PORT)) == NSAPI_ERROR_OK)
+                if(eth_error("serverTCP_listen", _serverTCP.listen()) == NSAPI_ERROR_OK)
                 {
-                    serverTCP.set_blocking(false);
-                    serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
-                    serverTCP_connect = true;
-                    fn_init();
+                    _PORT = message.PORT;
+                    _serverTCP.set_blocking(false);
+                    _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
+                    message.CONNECT = true;
+                    _queue->call(fn_init);
                 }
-    return serverTCP_connect;
+    return message.CONNECT;
 }
 
 void Transmission::serverTCP_event(void)
@@ -82,11 +111,11 @@ void Transmission::serverTCP_accept(void)
     {
         nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
         message.status = MAGENTA_ACCEPT;
-        clientTCP = serverTCP.accept(&ack);
+        _clientTCP = _serverTCP.accept(&ack);
         switch(ack)
         {
             case NSAPI_ERROR_OK:
-                clientTCP->set_timeout(TCP_CLIENT_TIMEOUT);
+                _clientTCP->set_timeout(TCP_CLIENT_TIMEOUT);
                 message.status = BLUE_CLIENT;
             break;
             case NSAPI_ERROR_PARAMETER:
@@ -95,7 +124,7 @@ void Transmission::serverTCP_accept(void)
             break;
             case NSAPI_ERROR_NO_CONNECTION:
                 message.status = GREEN_GLOBAL_UP;
-                _queue->call(this, &Transmission::serverTCP_accept);
+                serverTCP_event();
             break;
             default:
                 message.status = GREEN_GLOBAL_UP;
@@ -112,7 +141,7 @@ enumTRANSTATUS Transmission::recv(void)
         char buffer[1024] = {0};
         nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
         if(message.status == BLUE_CLIENT)
-            if((ack = clientTCP->recv(buffer, 1024)) < NSAPI_ERROR_WOULD_BLOCK)
+            if((ack = _clientTCP->recv(buffer, 1024)) < NSAPI_ERROR_WOULD_BLOCK)
                 eth_error("clientTCP_recv", ack);
         switch(ack)
         {
@@ -153,7 +182,7 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
             if(message.BREAK)
             {
                 message.BREAK = false;
-                eth_error("clientTCP_disconnect", clientTCP->close());
+                eth_error("clientTCP_disconnect", _clientTCP->close());
                 switch(_eth->get_connection_status())
                 {
                     case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
@@ -161,23 +190,23 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
                     case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
                     default:                                                            break;
                 }
-                _queue->call(this, &Transmission::serverTCP_accept);
+                serverTCP_event();
             }
             else if(!buff.empty())
             {
-                eth_error("clientTCP_send", ack = clientTCP->send(ssend.c_str(), ssend.size()));
+                eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
                 if(message.HTTP)
                 {
                     message.HTTP = false;
-                    eth_error("clientTCP_disconnect", clientTCP->close());
+                    eth_error("clientTCP_disconnect", _clientTCP->close());
                     switch(_eth->get_connection_status())
                     {
-                        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;   break;
-                        case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING;  break;
-                        case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;    break;
-                        default:                                                          break;
+                        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
+                        case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING; break;
+                        case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
+                        default:                                                            break;
                     }
-                    _queue->call(this, &Transmission::serverTCP_accept);
+                    serverTCP_event();
                 }
             }
         break;
@@ -190,6 +219,7 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
 
 bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA)
 {
+    if(!message.DHCP) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(5000);
     const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA);
@@ -213,6 +243,11 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     if(sFROM.empty()) return code == "220250250250221";
     else if(code != "220250250250354250221") _queue->call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
     return code == "220250250250354250221";
+}
+
+void Transmission::http(void)
+{
+    message.HTTP = true;
 }
 
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
