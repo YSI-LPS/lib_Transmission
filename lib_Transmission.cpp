@@ -59,8 +59,8 @@ bool Transmission::eth_connect(void)
                     _eth->attach(callback(this, &Transmission::eth_event));
                 }
             break;
-            case NSAPI_STATUS_GLOBAL_UP: return message.CONNECT; break;
-            default: break;
+            case NSAPI_STATUS_GLOBAL_UP:    return message.CONNECT; break;
+            default:                                                break;
         }
     }
     else if(_eth->get_connection_status() != NSAPI_STATUS_DISCONNECTED) eth_error("Ethernet_disconnect", _eth->disconnect());
@@ -73,8 +73,7 @@ void Transmission::eth_event(nsapi_event_t status, intptr_t param)
     switch(param)
     {
         case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
-        case NSAPI_STATUS_CONNECTING:
-        if(message.status == BLUE_CLIENT) eth_error("clientTCP_disconnect", _clientTCP->close());
+        case NSAPI_STATUS_CONNECTING:if(message.status == BLUE_CLIENT) eth_error("clientTCP_disconnect", _clientTCP->close());
                                         message.status = YELLOW_CONNECTING; break;
         case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;
                                         if(message.CONNECT)
@@ -91,7 +90,6 @@ bool Transmission::serverTCP_connect(void)
             if(eth_error("serverTCP_bind", _serverTCP.bind(message.PORT)) == NSAPI_ERROR_OK)
                 if(eth_error("serverTCP_listen", _serverTCP.listen()) == NSAPI_ERROR_OK)
                 {
-                    _PORT = message.PORT;
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
@@ -118,19 +116,26 @@ void Transmission::serverTCP_accept(void)
                 _clientTCP->set_timeout(TCP_CLIENT_TIMEOUT);
                 message.status = BLUE_CLIENT;
             break;
-            case NSAPI_ERROR_PARAMETER:
-            case NSAPI_ERROR_WOULD_BLOCK:
-                message.status = GREEN_GLOBAL_UP;
-            break;
             case NSAPI_ERROR_NO_CONNECTION:
-                message.status = GREEN_GLOBAL_UP;
+                eth_state();
                 serverTCP_event();
             break;
             default:
-                message.status = GREEN_GLOBAL_UP;
-                eth_error("serverTCP_accept", ack);
+                eth_state();
+                if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("serverTCP_accept", ack);
             break;
         }
+    }
+}
+
+void Transmission::eth_state(void)
+{
+    switch(_eth->get_connection_status())
+    {
+        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
+        case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING; break;
+        case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
+        default:                                                            break;
     }
 }
 
@@ -143,13 +148,7 @@ enumTRANSTATUS Transmission::recv(void)
         if(message.status == BLUE_CLIENT)
             if((ack = _clientTCP->recv(buffer, 1024)) < NSAPI_ERROR_WOULD_BLOCK)
                 eth_error("clientTCP_recv", ack);
-        switch(ack)
-        {
-            case NSAPI_ERROR_NO_CONNECTION:
-            case NSAPI_ERROR_OK:
-            message.BREAK = true;   break;
-            default:                break;
-        }
+        if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION)) message.BREAK = true;
         for(int i = 0; i < ack; i++) if(buffer[i] == '\n') buffer[i] = ';';
         fn_processing(message.buffer[TCP] = buffer, TCP);
         message.buffer[TCP].clear();
@@ -158,16 +157,12 @@ enumTRANSTATUS Transmission::recv(void)
     {
         char caractere;
         _serial->read(&caractere, 1);
-        switch(caractere)
+        if((caractere == '\n') || (caractere == '\r'))
         {
-            case '\n':
-                fn_processing(message.buffer[SERIAL], SERIAL);
-                message.buffer[SERIAL].clear();
-            break;
-            default:
-                if((caractere > 31) && (caractere < 127)) message.buffer[SERIAL] += caractere;
-            break;
+            fn_processing(message.buffer[SERIAL], SERIAL);
+            message.buffer[SERIAL].clear();
         }
+        else if((caractere > 31) && (caractere < 127)) message.buffer[SERIAL] += caractere;
     }
     return message.status;
 }
@@ -176,43 +171,19 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
-    switch(type)
+
+    if((type != TCP) && !buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
+    if(type != SERIAL)
     {
-        case TCP:
-            if(message.BREAK)
-            {
-                message.BREAK = false;
-                eth_error("clientTCP_disconnect", _clientTCP->close());
-                switch(_eth->get_connection_status())
-                {
-                    case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
-                    case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING; break;
-                    case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
-                    default:                                                            break;
-                }
-                serverTCP_event();
-            }
-            else if(!buff.empty())
-            {
-                eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-                if(message.HTTP)
-                {
-                    message.HTTP = false;
-                    eth_error("clientTCP_disconnect", _clientTCP->close());
-                    switch(_eth->get_connection_status())
-                    {
-                        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
-                        case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING; break;
-                        case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
-                        default:                                                            break;
-                    }
-                    serverTCP_event();
-                }
-            }
-        break;
-        case SERIAL:
-            if(!buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
-        break;
+        if(!message.BREAK && !buff.empty())
+            eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
+        if(message.BREAK || message.HTTP)
+        {
+            message.BREAK = message.HTTP = false;
+            eth_error("clientTCP_disconnect", _clientTCP->close());
+            eth_state();
+            serverTCP_event();
+        }
     }
     return ack;
 }
