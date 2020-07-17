@@ -175,7 +175,7 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
     if((type != TCP) && !buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
     if(type != SERIAL)
     {
-        if(!message.BREAK && !buff.empty())
+        if(!message.BREAK && !buff.empty() && (message.status == BLUE_CLIENT))
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
         if(message.BREAK || message.HTTP)
         {
