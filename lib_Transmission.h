@@ -26,8 +26,9 @@
 #include "EthernetInterface.h"
 #include <sstream>
 
-#define TCP_CLIENT_TIMEOUT      100                 // config client bloquante avec timeout sinon limite de transmission a 1072 octets
+#define REQUEST_TIMEOUT      100                 // config client bloquante avec timeout sinon limite de transmission a 1072 octets
 #define SMTP_SERVER             "129.175.212.70"    // IP sinon utilisation du DNS avec eth.getHostByName("smtp.u-psud.fr")
+#define NTP_SERVER              "129.175.34.43"     // IP sinon utilisation du DNS avec eth.getHostByName("ntp.u-psud.fr")
 
 enum    enumTRANSMISSION    { TCP, SERIAL, BOTH };
 enum    enumTRANSTATUS      { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
@@ -86,7 +87,21 @@ class Transmission
         * @param 
         * @returns none
         */
+        time_t              ntp(void);
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns none
+        */
         void                http(void);
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns none
+        */
+        bool                dhcp(void);
 
     private:
         UnbufferedSerial    *_serial;
