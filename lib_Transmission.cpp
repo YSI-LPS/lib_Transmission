@@ -113,7 +113,7 @@ void Transmission::serverTCP_accept(void)
         switch(ack)
         {
             case NSAPI_ERROR_OK:
-                _clientTCP->set_timeout(TCP_CLIENT_TIMEOUT);
+                _clientTCP->set_timeout(REQUEST_TIMEOUT);
                 message.status = BLUE_CLIENT;
             break;
             case NSAPI_ERROR_NO_CONNECTION:
@@ -192,7 +192,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
 {
     if(!message.DHCP) return false;
     TCPSocket clientSMTP;
-    clientSMTP.set_timeout(5000);
+    clientSMTP.set_timeout(REQUEST_TIMEOUT);
     const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA);
     const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@U-PSUD.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@U-PSUD.FR>\r\nTo: \"DESTINATAIRE\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
                                     { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
@@ -216,9 +216,39 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     return code == "220250250250354250221";
 }
 
+time_t Transmission::ntp(void)
+{
+    if(!message.DHCP) return 0;
+    time_t timeStamp = 0;
+    UDPSocket clientNTP;
+    clientNTP.set_timeout(REQUEST_TIMEOUT);
+    if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
+    {
+        uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
+        if(eth_error("clientNTP_send", clientNTP.sendto(SocketAddress(NTP_SERVER, 123), (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+        {
+            if(eth_error("clientNTP_recv", clientNTP.recvfrom(NULL, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+            {
+                timeStamp = ((buffer[10] & 0xFF) << 24) | ((buffer[10] & 0xFF00) << 8) | ((buffer[10] & 0xFF0000UL) >> 8) | ((buffer[10] & 0xFF000000UL) >> 24);
+                timeStamp -= 2208985200U;   // 01/01/1970 Europe
+                struct tm * tmTimeStamp = localtime(&timeStamp);
+                if (((tmTimeStamp->tm_mon > 3) && (tmTimeStamp->tm_mon < 9)) || ((tmTimeStamp->tm_mon == 3) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) > 24) && (tmTimeStamp->tm_hour > 1)) || ((tmTimeStamp->tm_mon == 9) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) < 25) && (tmTimeStamp->tm_hour < 3)))
+                        timeStamp += 3600;  // DST starts last Sunday of March; 2am (1am UTC), DST ends last Sunday of october; 3am (2am UTC)
+            }
+        }
+        eth_error("clientNTP_close", clientNTP.close());
+    }
+    return timeStamp;
+}
+
 void Transmission::http(void)
 {
     message.HTTP = true;
+}
+
+bool Transmission::dhcp(void)
+{
+    return message.DHCP;
 }
 
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
