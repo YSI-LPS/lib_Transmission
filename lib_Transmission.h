@@ -95,13 +95,6 @@ class Transmission
         * @returns none
         */
         void                http(void);
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns none
-        */
-        bool                dhcp(void);
 
     private:
         UnbufferedSerial    *_serial;
