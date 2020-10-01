@@ -232,8 +232,8 @@ time_t Transmission::ntp(void)
                 timeStamp = ((buffer[10] & 0xFF) << 24) | ((buffer[10] & 0xFF00) << 8) | ((buffer[10] & 0xFF0000UL) >> 8) | ((buffer[10] & 0xFF000000UL) >> 24);
                 timeStamp -= 2208985200U;   // 01/01/1970 Europe
                 struct tm * tmTimeStamp = localtime(&timeStamp);
-                if (((tmTimeStamp->tm_mon > 3) && (tmTimeStamp->tm_mon < 9)) || ((tmTimeStamp->tm_mon == 3) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) > 24) && (tmTimeStamp->tm_hour > 1)) || ((tmTimeStamp->tm_mon == 9) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) < 25) && (tmTimeStamp->tm_hour < 3)))
-                        timeStamp += 3600;  // DST starts last Sunday of March; 2am (1am UTC), DST ends last Sunday of october; 3am (2am UTC)
+                if (((tmTimeStamp->tm_mon > 3) && (tmTimeStamp->tm_mon < 10)) || ((tmTimeStamp->tm_mon == 3) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) > 24)) || ((tmTimeStamp->tm_mon == 10) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) < 25)))
+                    timeStamp += 3600;  // DST starts last Sunday of March; 2am (1am UTC), DST ends last Sunday of october; 3am (2am UTC)    
             }
         }
         eth_error("clientNTP_close", clientNTP.close());
@@ -244,11 +244,6 @@ time_t Transmission::ntp(void)
 void Transmission::http(void)
 {
     message.HTTP = true;
-}
-
-bool Transmission::dhcp(void)
-{
-    return message.DHCP;
 }
 
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
