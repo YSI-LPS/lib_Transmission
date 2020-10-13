@@ -1,12 +1,12 @@
 #include "lib_Transmission.h"
 
-Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, EventQueue *queue, void(*_init)(void), void(*_processing)(string, const enumTRANSMISSION&))
+Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, const enumTRANSMISSION&))
 {
+    _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
     _serial = serial;
     _eth = eth;
-    _queue = queue;
-    fn_init = _init;
-    fn_processing = _processing;
+    _init = init;
+    _processing = processing;
 }
 
 void Transmission::set(bool TCP, const char* IP, uint16_t PORT)
@@ -93,14 +93,14 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    _queue->call(fn_init);
+                    _queue.call(_init);
                 }
     return message.CONNECT;
 }
 
 void Transmission::serverTCP_event(void)
 {
-    _queue->call(this, &Transmission::serverTCP_accept);
+    _queue.call(this, &Transmission::serverTCP_accept);
 }
 
 void Transmission::serverTCP_accept(void)
@@ -150,7 +150,7 @@ enumTRANSTATUS Transmission::recv(void)
                 eth_error("clientTCP_recv", ack);
         if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION)) message.BREAK = true;
         for(int i = 0; i < ack; i++) if(buffer[i] == '\n') buffer[i] = ';';
-        fn_processing(message.buffer[TCP] = buffer, TCP);
+        _processing(message.buffer[TCP] = buffer, TCP);
         message.buffer[TCP].clear();
     }
     if(_serial->readable())
@@ -159,7 +159,7 @@ enumTRANSTATUS Transmission::recv(void)
         _serial->read(&caractere, 1);
         if((caractere == '\n') || (caractere == '\r'))
         {
-            fn_processing(message.buffer[SERIAL], SERIAL);
+            _processing(message.buffer[SERIAL], SERIAL);
             message.buffer[SERIAL].clear();
         }
         else if((caractere > 31) && (caractere < 127)) message.buffer[SERIAL] += caractere;
@@ -192,7 +192,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
 {
     if(!message.DHCP) return false;
     TCPSocket clientSMTP;
-    clientSMTP.set_timeout(REQUEST_TIMEOUT);
+    clientSMTP.set_timeout(REQUEST_TIMEOUT*20);
     const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA);
     const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@U-PSUD.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@U-PSUD.FR>\r\nTo: \"DESTINATAIRE\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
                                     { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
@@ -212,7 +212,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
         eth_error("clientSMTP_close", clientSMTP.close());
     }
     if(sFROM.empty()) return code == "220250250250221";
-    else if(code != "220250250250354250221") _queue->call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
+    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
     return code == "220250250250354250221";
 }
 
@@ -221,7 +221,7 @@ time_t Transmission::ntp(void)
     if(!message.DHCP) return 0;
     time_t timeStamp = 0;
     UDPSocket clientNTP;
-    clientNTP.set_timeout(REQUEST_TIMEOUT);
+    clientNTP.set_timeout(REQUEST_TIMEOUT*20);
     if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
     {
         uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
