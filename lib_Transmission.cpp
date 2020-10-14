@@ -216,7 +216,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     return code == "220250250250354250221";
 }
 
-time_t Transmission::ntp(void)
+time_t Transmission::ntp(const char* ADDRESS)
 {
     if(!message.DHCP) return 0;
     time_t timeStamp = 0;
@@ -224,8 +224,11 @@ time_t Transmission::ntp(void)
     clientNTP.set_timeout(REQUEST_TIMEOUT*20);
     if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
     {
+        string sADDRESS(ADDRESS);
         uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
-        if(eth_error("clientNTP_send", clientNTP.sendto(SocketAddress(NTP_SERVER, 123), (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+        SocketAddress address(NTP_SERVER, 123);
+        if(!sADDRESS.empty()) eth_error("eth_gethostbyname", _eth->gethostbyname(sADDRESS.c_str(), &address));
+        if(eth_error("clientNTP_send", clientNTP.sendto(address, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
         {
             if(eth_error("clientNTP_recv", clientNTP.recvfrom(NULL, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
             {
