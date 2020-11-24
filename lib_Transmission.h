@@ -31,7 +31,7 @@
 #define SMTP_SERVER         "129.175.212.70"    // IP sinon utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
 #define NTP_SERVER          "129.175.34.43"     // IP sinon utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
-enum    enumTRANSMISSION    { TCP, SERIAL, BOTH };
+enum    enumTRANSMISSION    { SERIAL, TCP, HTTP, ANY };
 enum    enumTRANSTATUS      { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
 
 /** Transmission class
@@ -45,7 +45,7 @@ class Transmission
         * @param 
         * @param 
         */
-        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, const enumTRANSMISSION&));
+        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, enumTRANSMISSION));
         
         /** 
         *
@@ -53,7 +53,7 @@ class Transmission
         * @param 
         * @returns none
         */
-        void                set(bool TCP, const char* IP="", uint16_t PORT=80);
+        string              set(bool SET, const char* IP="", uint16_t PORT=80);
         /** 
         *
         * @param 
@@ -89,13 +89,6 @@ class Transmission
         * @returns none
         */
         time_t              ntp(const char* ADDRESS="");
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns none
-        */
-        void                http(void);
 
     private:
         Thread              _queueThread;
@@ -104,10 +97,6 @@ class Transmission
         EthernetInterface   *_eth;
         TCPSocket           *_clientTCP = NULL;
         TCPSocket           _serverTCP;
-
-        /* Transmission */
-        void                (*_init)(void);
-        void                (*_processing)(string, const enumTRANSMISSION&);
 
         /* EthernetInterface */
         void                eth_state(void);
@@ -121,7 +110,9 @@ class Transmission
         void                serverTCP_accept(void);
         void                serverTCP_event(void);
 
-        struct  typeTRANSMISSION { string buffer[2]; enumTRANSTATUS status; bool TCP; bool HTTP; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t PORT; }
-                message = { {"", ""}, RED_DISCONNECTED, false, false, false, false, false, "", 80 };
+        /* Transmission */
+        void                (*_init)(void);
+        void                (*_processing)(string, enumTRANSMISSION);
+        struct              typeTRANSMISSION { string serial; enumTRANSTATUS status; bool SET; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t PORT; } message = { "", RED_DISCONNECTED, false, false, false, false, "", 80 };
 };
 #endif
