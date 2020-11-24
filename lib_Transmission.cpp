@@ -1,6 +1,7 @@
 #include "lib_Transmission.h"
+#include <sstream>
 
-Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, const enumTRANSMISSION&))
+Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, enumTRANSMISSION))
 {
     _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
     _serial = serial;
@@ -9,9 +10,9 @@ Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, voi
     _processing = processing;
 }
 
-void Transmission::set(bool TCP, const char* IP, uint16_t PORT)
+string Transmission::set(bool SET, const char* IP, uint16_t PORT)
 {
-    if(message.TCP && TCP)
+    if(message.SET && SET)
     {
         if(message.PORT != PORT)
         {
@@ -21,10 +22,12 @@ void Transmission::set(bool TCP, const char* IP, uint16_t PORT)
         }
         eth_error("Ethernet_disconnect", _eth->disconnect());
     }
-    message.TCP = TCP;
+    message.SET = SET;
     message.IP = IP;
     message.PORT = PORT;
     message.DHCP = message.IP.empty();
+    eth_connect();
+    return _eth->get_mac_address();
 }
 
 string Transmission::get(void)
@@ -38,7 +41,7 @@ string Transmission::get(void)
 
 bool Transmission::eth_connect(void)
 {
-    if(message.TCP)
+    if(message.SET)
     {
         switch(_eth->get_connection_status())
         {
@@ -135,7 +138,7 @@ void Transmission::eth_state(void)
         case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;  break;
         case NSAPI_STATUS_CONNECTING:   message.status = YELLOW_CONNECTING; break;
         case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;   break;
-        default:                                                            break;
+        default:                                                                            break;
     }
 }
 
@@ -143,15 +146,13 @@ enumTRANSTATUS Transmission::recv(void)
 {
     if(eth_connect())
     {
-        char buffer[1024] = {0};
-        nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
-        if(message.status == BLUE_CLIENT)
-            if((ack = _clientTCP->recv(buffer, 1024)) < NSAPI_ERROR_WOULD_BLOCK)
-                eth_error("clientTCP_recv", ack);
-        if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION)) message.BREAK = true;
-        for(int i = 0; i < ack; i++) if(buffer[i] == '\n') buffer[i] = ';';
-        _processing(message.buffer[TCP] = buffer, TCP);
-        message.buffer[TCP].clear();
+        char buffer[1072] = {0};
+        nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK, size = 0;
+        if(message.status == BLUE_CLIENT) while((ack = _clientTCP->recv(&buffer[size], 1072-size)) > NSAPI_ERROR_OK) size += ack;
+        if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
+        if(!size) message.BREAK = ((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION));
+        for(int i = 0; i < size; i++) if(buffer[i] == '\n') buffer[i] = ';';
+        _processing(buffer, TCP);
     }
     if(_serial->readable())
     {
@@ -159,10 +160,10 @@ enumTRANSTATUS Transmission::recv(void)
         _serial->read(&caractere, 1);
         if((caractere == '\n') || (caractere == '\r'))
         {
-            _processing(message.buffer[SERIAL], SERIAL);
-            message.buffer[SERIAL].clear();
+            _processing(message.serial, SERIAL);
+            message.serial.clear();
         }
-        else if((caractere > 31) && (caractere < 127)) message.buffer[SERIAL] += caractere;
+        else if((caractere > 31) && (caractere < 127)) message.serial += caractere;
     }
     return message.status;
 }
@@ -172,14 +173,14 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
 
-    if((type != TCP) && !buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
+    if((type != TCP) && (type != HTTP) && !buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
     if(type != SERIAL)
     {
         if(!message.BREAK && !buff.empty() && (message.status == BLUE_CLIENT))
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-        if(message.BREAK || message.HTTP)
+        if(message.BREAK || (type == HTTP))
         {
-            message.BREAK = message.HTTP = false;
+            message.BREAK = false;
             eth_error("clientTCP_disconnect", _clientTCP->close());
             eth_state();
             serverTCP_event();
@@ -190,11 +191,11 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
 
 bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA)
 {
-    if(!message.DHCP) return false;
+    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(REQUEST_TIMEOUT*20);
     const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA);
-    const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@U-PSUD.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@U-PSUD.FR>\r\nTo: \"DESTINATAIRE\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
+    const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@U-PSUD.FR>\r\nTo: \"DESTINATAIRE\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
                                     { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
     string code;
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
@@ -218,7 +219,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
 
 time_t Transmission::ntp(const char* ADDRESS)
 {
-    if(!message.DHCP) return 0;
+    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
     time_t timeStamp = 0;
     UDPSocket clientNTP;
     clientNTP.set_timeout(REQUEST_TIMEOUT*20);
@@ -235,18 +236,13 @@ time_t Transmission::ntp(const char* ADDRESS)
                 timeStamp = ((buffer[10] & 0xFF) << 24) | ((buffer[10] & 0xFF00) << 8) | ((buffer[10] & 0xFF0000UL) >> 8) | ((buffer[10] & 0xFF000000UL) >> 24);
                 timeStamp -= 2208985200U;   // 01/01/1970 Europe
                 struct tm * tmTimeStamp = localtime(&timeStamp);
-                if (((tmTimeStamp->tm_mon > 3) && (tmTimeStamp->tm_mon < 10)) || ((tmTimeStamp->tm_mon == 3) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) > 24)) || ((tmTimeStamp->tm_mon == 10) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) < 25)))
+                if (((tmTimeStamp->tm_mon > 2) && (tmTimeStamp->tm_mon < 10)) || ((tmTimeStamp->tm_mon == 2) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) > 24)) || ((tmTimeStamp->tm_mon == 9) && ((tmTimeStamp->tm_mday - tmTimeStamp->tm_wday) < 25)))
                     timeStamp += 3600;  // DST starts last Sunday of March; 2am (1am UTC), DST ends last Sunday of october; 3am (2am UTC)    
             }
         }
         eth_error("clientNTP_close", clientNTP.close());
     }
     return timeStamp;
-}
-
-void Transmission::http(void)
-{
-    message.HTTP = true;
 }
 
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
