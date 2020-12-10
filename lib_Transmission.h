@@ -31,21 +31,21 @@
 #define SMTP_SERVER         "129.175.212.70"    // IP sinon utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
 #define NTP_SERVER          "129.175.34.43"     // IP sinon utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
-enum    enumTRANSMISSION    { SERIAL, TCP, HTTP, ANY };
-enum    enumTRANSTATUS      { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE };
 
 /** Transmission class
  */
 class Transmission
 {
     public:
+        typedef enum { SERIAL, TCP, HTTP, ANY } enum_trans_to;
+        typedef enum { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE } enum_trans_status;
         /** make new Transmission instance
         * connected to 
         *
         * @param 
         * @param 
         */
-        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, enumTRANSMISSION));
+        Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to));
         
         /** 
         *
@@ -67,14 +67,14 @@ class Transmission
         * @param 
         * @returns none
         */
-        enumTRANSTATUS      recv(void);
+        enum_trans_status   recv(void);
         /** 
         *
         * @param 
         * @param 
         * @returns none
         */
-        nsapi_error_t       send(const string& BUFFER, const enumTRANSMISSION& TYPE);
+        nsapi_error_t       send(const string& BUFFER, const enum_trans_to& TYPE);
         /** 
         *
         * @param 
@@ -112,7 +112,7 @@ class Transmission
 
         /* Transmission */
         void                (*_init)(void);
-        void                (*_processing)(string, enumTRANSMISSION);
-        struct              typeTRANSMISSION { string serial; enumTRANSTATUS status; bool SET; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t PORT; } message = { "", RED_DISCONNECTED, false, false, false, false, "", 80 };
+        void                (*_processing)(string, enum_trans_to);
+        struct              typeTRANSMISSION { string serial; enum_trans_status status; bool SET; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t PORT; } message = { "", RED_DISCONNECTED, false, false, false, false, "", 80 };
 };
 #endif
