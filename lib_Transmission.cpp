@@ -1,7 +1,6 @@
 #include "lib_Transmission.h"
-#include <sstream>
 
-Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, enumTRANSMISSION))
+Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to))
 {
     _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
     _serial = serial;
@@ -12,6 +11,7 @@ Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, voi
 
 string Transmission::set(bool SET, const char* IP, uint16_t PORT)
 {
+    if(_eth == NULL) return "00:00:00:00:00:00";
     if(message.SET && SET)
     {
         if(message.PORT != PORT)
@@ -32,6 +32,7 @@ string Transmission::set(bool SET, const char* IP, uint16_t PORT)
 
 string Transmission::get(void)
 {
+    if(_eth == NULL) return "0.0.0.0";
     SocketAddress ip;
     _eth->get_ip_address(&ip);
     string address(ip.get_ip_address()?ip.get_ip_address():"0.0.0.0");
@@ -41,6 +42,7 @@ string Transmission::get(void)
 
 bool Transmission::eth_connect(void)
 {
+    if(_eth == NULL) return false;
     if(message.SET)
     {
         switch(_eth->get_connection_status())
@@ -96,7 +98,7 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    _queue.call(_init);
+                    if(_init != NULL) _queue.call(_init);
                 }
     return message.CONNECT;
 }
@@ -142,7 +144,7 @@ void Transmission::eth_state(void)
     }
 }
 
-enumTRANSTATUS Transmission::recv(void)
+Transmission::enum_trans_status Transmission::recv(void)
 {
     if(eth_connect())
     {
@@ -152,30 +154,37 @@ enumTRANSTATUS Transmission::recv(void)
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
         if(!size) message.BREAK = ((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION));
         for(int i = 0; i < size; i++) if(buffer[i] == '\n') buffer[i] = ';';
-        _processing(buffer, TCP);
+        if(_processing != NULL) _processing(buffer, TCP);
     }
-    if(_serial->readable())
+    if(_serial != NULL)
     {
-        char caractere;
-        _serial->read(&caractere, 1);
-        if((caractere == '\n') || (caractere == '\r'))
+        if(_serial->readable())
         {
-            _processing(message.serial, SERIAL);
-            message.serial.clear();
+            char caractere;
+            _serial->read(&caractere, 1);
+            if((caractere == '\n') || (caractere == '\r'))
+            {
+                if(_processing != NULL) _processing(message.serial, SERIAL);
+                message.serial.clear();
+            }
+            else if((caractere > 31) && (caractere < 127)) message.serial += caractere;
         }
-        else if((caractere > 31) && (caractere < 127)) message.serial += caractere;
     }
     return message.status;
 }
 
-nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& type)
+nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& type)
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
-
-    if((type != TCP) && (type != HTTP) && !buff.empty()) ack = _serial->write(ssend.c_str(), ssend.length());
+    if((type != TCP) && (type != HTTP) && !buff.empty())
+    {
+        if(_serial == NULL) return NSAPI_ERROR_NO_CONNECTION;
+        ack = _serial->write(ssend.c_str(), ssend.length());
+    }
     if(type != SERIAL)
     {
+        if(_eth == NULL) return NSAPI_ERROR_NO_CONNECTION;
         if(!message.BREAK && !buff.empty() && (message.status == BLUE_CLIENT))
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
         if(message.BREAK || (type == HTTP))
@@ -191,6 +200,7 @@ nsapi_error_t Transmission::send(const string& buff, const enumTRANSMISSION& typ
 
 bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA)
 {
+    if(_eth == NULL) return false;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(REQUEST_TIMEOUT*20);
@@ -219,6 +229,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
 
 time_t Transmission::ntp(const char* ADDRESS)
 {
+    if(_eth == NULL) return 0;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
     time_t timeStamp = 0;
     UDPSocket clientNTP;
