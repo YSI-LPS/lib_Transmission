@@ -1,5 +1,6 @@
 #include "lib_Transmission.h"
 
+#if MBED_MAJOR_VERSION > 5
 Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to))
 {
     _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
@@ -8,6 +9,16 @@ Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, voi
     _init = init;
     _processing = processing;
 }
+#else
+Transmission::Transmission(Serial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to))
+{
+    _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _serial = serial;
+    _eth = eth;
+    _init = init;
+    _processing = processing;
+}
+#endif
 
 string Transmission::set(bool SET, const char* IP, uint16_t PORT)
 {
@@ -161,7 +172,11 @@ Transmission::enum_trans_status Transmission::recv(void)
         if(_serial->readable())
         {
             char caractere;
+            #if MBED_MAJOR_VERSION > 5
             _serial->read(&caractere, 1);
+            #else
+            caractere = _serial->getc();
+            #endif
             if((caractere == '\n') || (caractere == '\r'))
             {
                 if(_processing != NULL) _processing(message.serial, SERIAL);
@@ -180,7 +195,11 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& type)
     if((type != TCP) && (type != HTTP) && !buff.empty())
     {
         if(_serial == NULL) return NSAPI_ERROR_NO_CONNECTION;
+        #if MBED_MAJOR_VERSION > 5
         ack = _serial->write(ssend.c_str(), ssend.length());
+        #else
+        ack = _serial->printf("%s", ssend.c_str());
+        #endif
     }
     if(type != SERIAL)
     {
@@ -223,7 +242,11 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
         eth_error("clientSMTP_close", clientSMTP.close());
     }
     if(sFROM.empty()) return code == "220250250250221";
+    #if MBED_MAJOR_VERSION > 5
     else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
+    #else
+    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
+    #endif
     return code == "220250250250354250221";
 }
 
