@@ -45,7 +45,11 @@ class Transmission
         * @param 
         * @param 
         */
+        #if MBED_MAJOR_VERSION > 5
         Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to));
+        #else
+        Transmission(Serial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to));
+        #endif
         
         /** 
         *
@@ -93,7 +97,11 @@ class Transmission
     private:
         Thread              _queueThread;
         EventQueue          _queue;
+        #if MBED_MAJOR_VERSION > 5
         UnbufferedSerial    *_serial;
+        #else
+        Serial              *_serial;
+        #endif
         EthernetInterface   *_eth;
         TCPSocket           *_clientTCP = NULL;
         TCPSocket           _serverTCP;
