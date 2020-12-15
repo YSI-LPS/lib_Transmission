@@ -188,11 +188,11 @@ Transmission::enum_trans_status Transmission::recv(void)
     return message.status;
 }
 
-nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& type)
+nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& to)
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
-    if((type != TCP) && (type != HTTP) && !buff.empty())
+    if((to != TCP) && (to != HTTP) && !buff.empty())
     {
         if(_serial == NULL) return NSAPI_ERROR_NO_CONNECTION;
         #if MBED_MAJOR_VERSION > 5
@@ -201,12 +201,12 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& type)
         ack = _serial->printf("%s", ssend.c_str());
         #endif
     }
-    if(type != SERIAL)
+    if(to != SERIAL)
     {
         if(_eth == NULL) return NSAPI_ERROR_NO_CONNECTION;
         if(!message.BREAK && !buff.empty() && (message.status == BLUE_CLIENT))
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-        if(message.BREAK || (type == HTTP))
+        if(message.BREAK || (to == HTTP))
         {
             message.BREAK = false;
             eth_error("clientTCP_disconnect", _clientTCP->close());
@@ -223,8 +223,8 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(REQUEST_TIMEOUT*20);
-    const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA);
-    const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@U-PSUD.FR>\r\nTo: \"DESTINATAIRE\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
+    const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA), sTO(sMAIL.substr(0, sMAIL.find("@")));
+    const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
                                     { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
     string code;
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
