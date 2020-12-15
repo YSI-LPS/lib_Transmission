@@ -78,7 +78,7 @@ class Transmission
         * @param 
         * @returns none
         */
-        nsapi_error_t       send(const string& BUFFER, const enum_trans_to& TYPE);
+        nsapi_error_t       send(const string& BUFFER, const enum_trans_to& TO);
         /** 
         *
         * @param 
