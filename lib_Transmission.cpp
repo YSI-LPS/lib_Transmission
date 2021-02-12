@@ -1,26 +1,21 @@
 #include "lib_Transmission.h"
 
-#if MBED_MAJOR_VERSION > 5
-Transmission::Transmission(UnbufferedSerial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to))
+Transmission::Transmission(
+    #if MBED_MAJOR_VERSION > 5
+    UnbufferedSerial *serial,
+    #else
+    Serial *serial,
+    #endif
+    EthernetInterface *eth,
+    void(*init)(void),
+    void(*processing)(string, Transmission::enum_trans_to))
+    :_serial(serial), _eth(eth), _init(init), _processing(processing)
 {
-    _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
-    _serial = serial;
-    _eth = eth;
-    _init = init;
-    _processing = processing;
+    if(_serial != NULL) _serial->attach(callback(this, &Transmission::serial_event));
+    _queue = mbed_event_queue();
 }
-#else
-Transmission::Transmission(Serial *serial, EthernetInterface *eth, void(*init)(void), void(*processing)(string, Transmission::enum_trans_to))
-{
-    _queueThread.start(callback(&_queue, &EventQueue::dispatch_forever));
-    _serial = serial;
-    _eth = eth;
-    _init = init;
-    _processing = processing;
-}
-#endif
 
-string Transmission::set(bool SET, const char* IP, uint16_t PORT)
+string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, const uint16_t& TIMEOUT)
 {
     if(_eth == NULL) return "00:00:00:00:00:00";
     if(message.SET && SET)
@@ -36,12 +31,13 @@ string Transmission::set(bool SET, const char* IP, uint16_t PORT)
     message.SET = SET;
     message.IP = IP;
     message.PORT = PORT;
+    message.TIMEOUT = TIMEOUT;
     message.DHCP = message.IP.empty();
     eth_connect();
-    return _eth->get_mac_address();
+    return _eth->get_mac_address()?_eth->get_mac_address():"00:00:00:00:00:00";
 }
 
-string Transmission::get(void)
+string Transmission::ip(void)
 {
     if(_eth == NULL) return "0.0.0.0";
     SocketAddress ip;
@@ -59,24 +55,14 @@ bool Transmission::eth_connect(void)
         switch(_eth->get_connection_status())
         {
             case NSAPI_STATUS_DISCONNECTED:
-                if(message.status == RED_DISCONNECTED)
-                {
-                    eth_error("Ethernet_blocking", _eth->set_blocking(false));
-                    eth_error("Ethernet_dhcp", _eth->set_dhcp(message.DHCP));
-                    if(!message.DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(message.IP.c_str()), SocketAddress("255.255.255.0"), SocketAddress("192.168.1.1")));
-                    eth_error("Ethernet_connect", _eth->connect());
-                }
+                eth_error("Ethernet_blocking", _eth->set_blocking(false));
+                eth_error("Ethernet_dhcp", _eth->set_dhcp(message.DHCP));
+                if(!message.DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(message.IP.c_str()), SocketAddress("255.255.255.0"), SocketAddress("192.168.1.1")));
+                _eth->attach(callback(this, &Transmission::eth_event));
+                eth_error("Ethernet_connect", _eth->connect());
             break;
-            case NSAPI_STATUS_CONNECTING:
-                if(message.status == RED_DISCONNECTED)
-                {
-                    eth_status("Ethernet_connect", NSAPI_STATUS_CONNECTING);
-                    message.status = YELLOW_CONNECTING;
-                    _eth->attach(callback(this, &Transmission::eth_event));
-                }
-            break;
-            case NSAPI_STATUS_GLOBAL_UP:    return message.CONNECT; break;
-            default:                                                break;
+            case NSAPI_STATUS_GLOBAL_UP: return message.CONNECT;break;
+            default:                                            break;
         }
     }
     else if(_eth->get_connection_status() != NSAPI_STATUS_DISCONNECTED) eth_error("Ethernet_disconnect", _eth->disconnect());
@@ -109,14 +95,14 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    if(_init != NULL) _queue.call(_init);
+                    if(_init != NULL) _queue->call(_init);
                 }
     return message.CONNECT;
 }
 
 void Transmission::serverTCP_event(void)
 {
-    _queue.call(this, &Transmission::serverTCP_accept);
+    _queue->call(this, &Transmission::serverTCP_accept);
 }
 
 void Transmission::serverTCP_accept(void)
@@ -129,7 +115,7 @@ void Transmission::serverTCP_accept(void)
         switch(ack)
         {
             case NSAPI_ERROR_OK:
-                _clientTCP->set_timeout(REQUEST_TIMEOUT);
+                _clientTCP->set_timeout(message.TIMEOUT);   // config client bloquante avec timeout sinon limite de transmission a 1072 octets
                 message.status = BLUE_CLIENT;
             break;
             case NSAPI_ERROR_NO_CONNECTION:
@@ -155,35 +141,36 @@ void Transmission::eth_state(void)
     }
 }
 
+void Transmission::serial_event(void)
+{
+    static char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
+    static uint16_t size = 0;
+    char caractere;
+    #if MBED_MAJOR_VERSION > 5
+    _serial->read(&caractere, 1);
+    #else
+    caractere = _serial->getc();
+    #endif
+    if((caractere == '\n') || (caractere == '\r'))
+    {
+        buffer[size] = '\0';
+        size = 0;
+        if(_processing != NULL) _queue->call(_processing, buffer, SERIAL);
+    }
+    else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_DEFAULT_BUFFER_SIZE-2))) buffer[size++] = caractere;
+}
+
 Transmission::enum_trans_status Transmission::recv(void)
 {
-    if(eth_connect())
+    if(eth_connect() && (message.status == BLUE_CLIENT))
     {
-        char buffer[1072] = {0};
+        char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
         nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK, size = 0;
-        if(message.status == BLUE_CLIENT) while((ack = _clientTCP->recv(&buffer[size], 1072-size)) > NSAPI_ERROR_OK) size += ack;
+        while((ack = _clientTCP->recv(&buffer[size], TRANSMISSION_DEFAULT_BUFFER_SIZE-size)) > NSAPI_ERROR_OK) size += ack;
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
         if(!size) message.BREAK = ((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION));
         for(int i = 0; i < size; i++) if(buffer[i] == '\n') buffer[i] = ';';
         if(_processing != NULL) _processing(buffer, TCP);
-    }
-    if(_serial != NULL)
-    {
-        if(_serial->readable())
-        {
-            char caractere;
-            #if MBED_MAJOR_VERSION > 5
-            _serial->read(&caractere, 1);
-            #else
-            caractere = _serial->getc();
-            #endif
-            if((caractere == '\n') || (caractere == '\r'))
-            {
-                if(_processing != NULL) _processing(message.serial, SERIAL);
-                message.serial.clear();
-            }
-            else if((caractere > 31) && (caractere < 127)) message.serial += caractere;
-        }
     }
     return message.status;
 }
@@ -217,22 +204,22 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_to& to)
     return ack;
 }
 
-bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA)
+bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA, const char* SERVER)
 {
     if(_eth == NULL) return false;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
-    clientSMTP.set_timeout(REQUEST_TIMEOUT*20);
-    const string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA), sTO(sMAIL.substr(0, sMAIL.find("@")));
-    const string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n.\r\n", "QUIT\r\n" },
+    clientSMTP.set_timeout(2000);
+    string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA), sTO(sMAIL.substr(0, sMAIL.find("@")));
+    string smtpParams[][7] = {{ "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n\r\n.\r\n", "QUIT\r\n" },
                                     { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
     string code;
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
     {
-        for(const string ssend : smtpParams[(sFROM.empty())?1:0])
+        for(const string& ssend : smtpParams[(sFROM.empty())?1:0])
         {
             char buffer[256] = {0};
-            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(SMTP_SERVER, 25))) < NSAPI_ERROR_OK) break; }
+            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(SERVER, 25))) < NSAPI_ERROR_OK)      break; }
             else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                        break;
             if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 256)) < NSAPI_ERROR_OK)                                             break;
             buffer[3] = 0;
@@ -243,27 +230,27 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     }
     if(sFROM.empty()) return code == "220250250250221";
     #if MBED_MAJOR_VERSION > 5
-    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
+    else if(code != "220250250250354250221") _queue->call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
     #else
-    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA);
+    else if(code != "220250250250354250221") _queue->call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
     #endif
     return code == "220250250250354250221";
 }
 
-time_t Transmission::ntp(const char* ADDRESS)
+time_t Transmission::ntp(const char* SERVER)
 {
     if(_eth == NULL) return 0;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
     time_t timeStamp = 0;
     UDPSocket clientNTP;
-    clientNTP.set_timeout(REQUEST_TIMEOUT*20);
+    clientNTP.set_timeout(2000);
     if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
     {
-        string sADDRESS(ADDRESS);
         uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
-        SocketAddress address(NTP_SERVER, 123);
-        if(!sADDRESS.empty()) eth_error("eth_gethostbyname", _eth->gethostbyname(sADDRESS.c_str(), &address));
-        if(eth_error("clientNTP_send", clientNTP.sendto(address, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+        SocketAddress server(SERVER, 123);
+        string sSERVER(SERVER);
+        if(sSERVER != TRANSMISSION_DEFAULT_NTP_SERVER) eth_error("eth_gethostbyname", _eth->gethostbyname(sSERVER.c_str(), &server));
+        if(eth_error("clientNTP_send", clientNTP.sendto(server, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
         {
             if(eth_error("clientNTP_recv", clientNTP.recvfrom(NULL, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
             {
@@ -281,7 +268,8 @@ time_t Transmission::ntp(const char* ADDRESS)
 
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 {
-    stringstream message;
+    #ifndef NDEBUG
+    ostringstream message;
     message << "\n" << source << "[" << code;
     switch(code)
     {
@@ -291,7 +279,6 @@ intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
         case NSAPI_STATUS_CONNECTING:           message << "] NSAPI_STATUS_CONNECTING        < connecting to network >";    break;
         case NSAPI_STATUS_ERROR_UNSUPPORTED:    message << "] NSAPI_STATUS_ERROR_UNSUPPORTED < unsupported functionality >";break;
     }
-    #ifndef NDEBUG
     _serial->write(message.str().c_str(), message.str().size());
     #endif
     return code;
@@ -299,7 +286,8 @@ intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 
 nsapi_error_t Transmission::eth_error(const string& source, const nsapi_error_t& code)
 {
-    stringstream message;
+    #ifndef NDEBUG
+    ostringstream message;
     message << "\n" << source << "[" << code;
     switch(code)
     {
@@ -326,7 +314,6 @@ nsapi_error_t Transmission::eth_error(const string& source, const nsapi_error_t&
         case NSAPI_ERROR_BUSY:                  message << "] NSAPI_ERROR_BUSY               < device is busy and cannot accept new operation >";   break;
         default:                                message << "] NSAPI_ERROR                    < unknow code >";                                      break;
     }
-    #ifndef NDEBUG
     if(code < NSAPI_ERROR_OK) _serial->write(message.str().c_str(), message.str().size());
     #endif
     return code;
