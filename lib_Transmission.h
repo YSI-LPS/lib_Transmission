@@ -24,10 +24,11 @@
 #define NDEBUG
 
 #include "mbed.h"
+#include "USBCDC.h"
 #include "EthernetInterface.h"
 #include <sstream>
 
-#define TRANSMISSION_DEFAULT_BUFFER_SIZE    1072                // taille des buffers de reception serial et tcp
+#define TRANSMISSION_DEFAULT_BUFFER_SIZE    1072                // taille des buffers de reception
 #define TRANSMISSION_DEFAULT_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
 #define TRANSMISSION_DEFAULT_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
@@ -36,10 +37,28 @@
 class Transmission
 {
     public:
-        typedef enum { SERIAL, TCP, HTTP, ANY }
-            enum_trans_to;
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns 
+        */
+        typedef enum { USB, SERIAL, TCP, HTTP, ANY }
+            enum_trans_delivery;
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns 
+        */
         typedef enum { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE }
             enum_trans_status;
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns 
+        */
         struct { const char *RETURN_OK; const char *RETURN_NO_CONTENT; const char *RETURN_MOVED; const char *RETURN_FOUND; const char *RETURN_SEE_OTHER; const char *RETURN_REDIRECT; const char *RETURN_NOT_FOUND; }
             http = { "HTTP/1.1 200 OK\r\n", "HTTP/1.1 204 No Content\r\n", "HTTP/1.1 301 Moved Permanently\r\n", "HTTP/1.1 302 Found\r\n", "HTTP/1.1 303 See Other\r\n", "HTTP/1.1 307 Temporary Redirect\r\n", "HTTP/1.1 404 Not Found\r\n" };
         /** make new Transmission instance
@@ -54,10 +73,46 @@ class Transmission
             #else
             Serial              *serial,
             #endif
-            EthernetInterface   *eth, 
-            void(*init)(void), 
-            void(*processing)(string, Transmission::enum_trans_to));
-        
+            EthernetInterface   *eth,
+            USBCDC              *usb,
+            string              (*processing)(string),
+            void                (*startuped)(void) = NULL,
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            #if MBED_MAJOR_VERSION > 5
+            UnbufferedSerial    *serial,
+            #else
+            Serial              *serial,
+            #endif
+            string              (*processing)(string),
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            EthernetInterface   *eth,
+            string              (*processing)(string),
+            void                (*startuped)(void) = NULL,
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            USBCDC              *usb,
+            string              (*processing)(string),
+            bool                caseIgnore = true);
         /** 
         *
         * @param 
@@ -85,7 +140,14 @@ class Transmission
         * @param 
         * @returns 
         */
-        nsapi_error_t       send(const string& BUFFER="", const enum_trans_to& TO=ANY);
+        nsapi_error_t       send(const string& BUFFER="", const enum_trans_delivery& DELIVERY=ANY);
+        /** 
+        *
+        * @param 
+        * @param 
+        * @returns 
+        */
+        void                delivery(const enum_trans_delivery&);
         /** 
         *
         * @param 
@@ -103,13 +165,16 @@ class Transmission
 
     private:
         #if MBED_MAJOR_VERSION > 5
-        UnbufferedSerial    *_serial;
+        UnbufferedSerial    *_serial = NULL;
         #else
-        Serial              *_serial;
+        Serial              *_serial = NULL;
         #endif
         TCPSocket           _serverTCP, *_clientTCP = NULL;
-        EventQueue          *_queue;
-        EthernetInterface   *_eth;
+        EventQueue          *_queue = NULL;
+        EthernetInterface   *_eth = NULL;
+        USBCDC              *_usb = NULL;
+        bool                _caseIgnore = false;
+        enum_trans_delivery _delivery = ANY;
 
         /* Serial */
         void                serial_event(void);
@@ -127,8 +192,9 @@ class Transmission
         void                serverTCP_event(void);
 
         /* Transmission */
-        void                (*_init)(void);
-        void                (*_processing)(string, enum_trans_to);
+        void                (*_startuped)(void);
+        string              (*_processing)(string);
+        void                preprocessing(char *buffer, const enum_trans_delivery);
         struct              { enum_trans_status status; bool SET; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t TIMEOUT; uint16_t PORT; }
                             message = { RED_DISCONNECTED, false, false, false, false, "", 100, 80 };
 };
