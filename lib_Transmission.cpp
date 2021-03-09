@@ -1,4 +1,5 @@
 #include "lib_Transmission.h"
+#include <string>
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -13,7 +14,7 @@ Transmission::Transmission(
     bool                caseIgnore)
     :_serial(serial), _eth(eth), _usb(usb), _processing(processing), _startuped(startuped), _caseIgnore(caseIgnore)
 {
-    if(_serial != NULL) _serial->attach(callback(this, &Transmission::serial_event));
+    if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
     _queue = mbed_event_queue();
 }
 
@@ -27,7 +28,7 @@ Transmission::Transmission(
     bool                caseIgnore)
     :_serial(serial), _processing(processing), _caseIgnore(caseIgnore)
 {
-    if(_serial != NULL) _serial->attach(callback(this, &Transmission::serial_event));
+    if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
     _queue = mbed_event_queue();
 }
 
@@ -49,7 +50,7 @@ Transmission::Transmission(
 
 string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, const uint16_t& TIMEOUT)
 {
-    if(_eth == NULL) return "00:00:00:00:00:00";
+    if(!_eth) return "00:00:00:00:00:00";
     if(message.SET && SET)
     {
         if(message.PORT != PORT)
@@ -71,7 +72,7 @@ string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, c
 
 string Transmission::ip(void)
 {
-    if(_eth == NULL) return "0.0.0.0";
+    if(!_eth) return "0.0.0.0";
     SocketAddress ip;
     _eth->get_ip_address(&ip);
     string address(ip.get_ip_address()?ip.get_ip_address():"0.0.0.0");
@@ -81,7 +82,7 @@ string Transmission::ip(void)
 
 bool Transmission::eth_connect(void)
 {
-    if(_eth == NULL) return false;
+    if(!_eth) return false;
     if(message.SET)
     {
         switch(_eth->get_connection_status())
@@ -125,7 +126,7 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    if(_startuped != NULL) _queue->call(_startuped);
+                    if(_startuped) _queue->call(_startuped);
                 }
     return message.CONNECT;
 }
@@ -171,25 +172,6 @@ void Transmission::eth_state(void)
     }
 }
 
-void Transmission::delivery(const enum_trans_delivery& delivery)
-{
-    _delivery = delivery;
-}
-
-void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
-{
-    _delivery = delivery;
-    string ssend, cmd(buffer);
-    if(_caseIgnore) for(unsigned int i = 0; i < cmd.size(); i++) if ((cmd[i] >= 'a') && (cmd[i] <= 'z')) cmd[i] += 'A' - 'a';
-    istringstream srecv(cmd);
-    while(getline(srecv, cmd, ';'))
-    {
-        if(ssend.size() > 0) ssend += ' ';
-        ssend += _processing(cmd);
-    }
-    send(ssend, _delivery);
-}
-
 void Transmission::serial_event(void)
 {
     static char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
@@ -200,14 +182,14 @@ void Transmission::serial_event(void)
     {
         buffer[size] = '\0';
         size = 0;
-        if(_processing != NULL) _queue->call(this, &Transmission::preprocessing, buffer, SERIAL);
+        if(_processing) _queue->call(this, &Transmission::preprocessing, buffer, SERIAL);
     }
     else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_DEFAULT_BUFFER_SIZE-2))) buffer[size++] = caractere;
 }
 
 Transmission::enum_trans_status Transmission::recv(void)
 {
-    if(_usb != NULL)
+    if(_usb)
     {
         _usb->connect();
         if(_usb->ready())
@@ -215,11 +197,7 @@ Transmission::enum_trans_status Transmission::recv(void)
             uint32_t size = 0;
             uint8_t buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
             _usb->receive_nb(buffer, TRANSMISSION_DEFAULT_BUFFER_SIZE, &size);
-            if(size)
-            {
-                for(int i = 0; i < size; i++) if(buffer[i] == '\n') buffer[i] = ';';
-                if(_processing != NULL) preprocessing((char *)buffer, USB);
-            }
+            if(size && _processing) preprocessing((char *)buffer, USB);
         }
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
@@ -229,21 +207,39 @@ Transmission::enum_trans_status Transmission::recv(void)
         while((ack = _clientTCP->recv(&buffer[size], TRANSMISSION_DEFAULT_BUFFER_SIZE-size)) > NSAPI_ERROR_OK) size += ack;
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
         if(!size) message.BREAK = ((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION));
-        for(int i = 0; i < size; i++) if(buffer[i] == '\n') buffer[i] = ';';
-        if(_processing != NULL) preprocessing(buffer, TCP);
+        if(_processing) preprocessing(buffer, TCP);
     }
     return message.status;
+}
+
+void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
+{
+    string cmd(buffer);
+    if(_caseIgnore) for(char &c : cmd) if((c >= 'a') && (c <= 'z')) c += 'A'-'a';
+    if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
+        send(_processing(cmd), Transmission::HTTP);
+    else
+    {
+        string ssend;
+        istringstream srecv(cmd);
+        while(getline(srecv, cmd, ';'))
+        {
+            if(ssend.size() > 0) ssend += ' ';
+            ssend += _processing(cmd);
+        }
+        send(ssend, delivery);
+    }
 }
 
 nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& delivery)
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
-    if((_usb != NULL) && !buff.empty() && ((delivery == USB) || (delivery == ANY)))
+    if(_usb && !buff.empty() && ((delivery == USB) || (delivery == ANY)))
         _usb->send((uint8_t*)ssend.c_str(), ssend.size());
-    if((_serial != NULL)  && !buff.empty() && ((delivery == SERIAL) || (delivery == ANY)))
+    if(_serial  && !buff.empty() && ((delivery == SERIAL) || (delivery == ANY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
-    if((_eth != NULL) && ((delivery == TCP) || (delivery == HTTP) || (delivery == ANY)))
+    if(_eth && ((delivery == TCP) || (delivery == HTTP) || (delivery == ANY)))
     {
         if(!message.BREAK && (message.status == BLUE_CLIENT) && !buff.empty())
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
@@ -260,7 +256,7 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& 
 
 bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA, const char* SERVER)
 {
-    if(_eth == NULL) return false;
+    if(!_eth) return false;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(2000);
@@ -293,7 +289,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
 
 time_t Transmission::ntp(const char* SERVER)
 {
-    if(_eth == NULL) return 0;
+    if(!_eth) return 0;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
     time_t timeStamp = 0;
     UDPSocket clientNTP;

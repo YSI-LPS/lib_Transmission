@@ -147,13 +147,6 @@ class Transmission
         * @param 
         * @returns 
         */
-        void                delivery(const enum_trans_delivery&);
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns 
-        */
         bool                smtp(const char* MAIL, const char* FROM="", const char* SUBJECT="", const char* DATA="", const char* SERVER=TRANSMISSION_DEFAULT_SMTP_SERVER);
         /** 
         *
@@ -174,7 +167,6 @@ class Transmission
         EthernetInterface   *_eth = NULL;
         USBCDC              *_usb = NULL;
         bool                _caseIgnore = false;
-        enum_trans_delivery _delivery = ANY;
 
         /* Serial */
         void                serial_event(void);
