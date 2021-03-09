@@ -215,17 +215,18 @@ Transmission::enum_trans_status Transmission::recv(void)
 void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
 {
     string cmd(buffer);
-    if(_caseIgnore) for(char &c : cmd) if((c >= 'a') && (c <= 'z')) c += 'A'-'a';
+    for(char &c : cmd) if(_caseIgnore && (c >= 'a') && (c <= 'z')) c += 'A'-'a';
     if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
         send(_processing(cmd), Transmission::HTTP);
     else
     {
-        string ssend;
+        for(char &c : cmd) if(c == '\n') c = ';';
         istringstream srecv(cmd);
+        string ssend;
         while(getline(srecv, cmd, ';'))
         {
-            if(ssend.size() > 0) ssend += ' ';
-            ssend += _processing(cmd);
+            string process = _processing(cmd);
+            if(!process.empty()) ssend += (ssend.size() > 0)?(' '+process):process;
         }
         send(ssend, delivery);
     }
