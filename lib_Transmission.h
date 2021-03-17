@@ -73,10 +73,53 @@ class Transmission
             #else
             Serial              *serial,
             #endif
+            USBCDC              *usb,
             EthernetInterface   *eth,
+            string              (*processing)(string),
+            void                (*ethup)(void) = NULL,
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            #if MBED_MAJOR_VERSION > 5
+            UnbufferedSerial    *serial,
+            #else
+            Serial              *serial,
+            #endif
             USBCDC              *usb,
             string              (*processing)(string),
-            void                (*startuped)(void) = NULL,
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            #if MBED_MAJOR_VERSION > 5
+            UnbufferedSerial    *serial,
+            #else
+            Serial              *serial,
+            #endif
+            EthernetInterface   *eth,
+            string              (*processing)(string),
+            void                (*ethup)(void) = NULL,
+            bool                caseIgnore = true);
+        /** make new Transmission instance
+        * connected to 
+        *
+        * @param 
+        * @param 
+        */
+        Transmission(
+            USBCDC              *usb,
+            EthernetInterface   *eth,
+            string              (*processing)(string),
+            void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
         * connected to 
@@ -101,7 +144,7 @@ class Transmission
         Transmission(
             EthernetInterface   *eth,
             string              (*processing)(string),
-            void                (*startuped)(void) = NULL,
+            void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
         * connected to 
@@ -184,10 +227,10 @@ class Transmission
         void                serverTCP_event(void);
 
         /* Transmission */
-        void                (*_startuped)(void);
+        void                (*_ethup)(void);
         string              (*_processing)(string);
         void                preprocessing(char *buffer, const enum_trans_delivery);
-        struct              { enum_trans_status status; bool SET; bool BREAK; bool DHCP; bool CONNECT; string IP; uint16_t TIMEOUT; uint16_t PORT; }
-                            message = { RED_DISCONNECTED, false, false, false, false, "", 100, 80 };
+        struct              { enum_trans_status status; bool SET; bool DHCP; bool CONNECT; string IP; uint16_t TIMEOUT; uint16_t PORT; }
+                            message = { RED_DISCONNECTED, false, false, false, "", 100, 80 };
 };
 #endif

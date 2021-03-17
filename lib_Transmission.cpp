@@ -1,5 +1,36 @@
 #include "lib_Transmission.h"
-#include <string>
+
+Transmission::Transmission(
+    #if MBED_MAJOR_VERSION > 5
+    UnbufferedSerial    *serial,
+    #else
+    Serial              *serial,
+    #endif
+    USBCDC              *usb,
+    EthernetInterface   *eth,
+    string              (*processing)(string),
+    void                (*ethup)(void),
+    bool                caseIgnore)
+    :_serial(serial), _usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+{
+    if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
+    _queue = mbed_event_queue();
+}
+
+Transmission::Transmission(
+    #if MBED_MAJOR_VERSION > 5
+    UnbufferedSerial    *serial,
+    #else
+    Serial              *serial,
+    #endif
+    USBCDC              *usb,
+    string              (*processing)(string),
+    bool                caseIgnore)
+    :_serial(serial), _usb(usb), _processing(processing), _caseIgnore(caseIgnore)
+{
+    if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
+    _queue = mbed_event_queue();
+}
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -8,13 +39,23 @@ Transmission::Transmission(
     Serial              *serial,
     #endif
     EthernetInterface   *eth,
-    USBCDC              *usb,
     string              (*processing)(string),
-    void                (*startuped)(void),
+    void                (*ethup)(void),
     bool                caseIgnore)
-    :_serial(serial), _eth(eth), _usb(usb), _processing(processing), _startuped(startuped), _caseIgnore(caseIgnore)
+    :_serial(serial), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
+    _queue = mbed_event_queue();
+}
+
+Transmission::Transmission(
+    USBCDC              *usb,
+    EthernetInterface   *eth,
+    string              (*processing)(string),
+    void                (*ethup)(void),
+    bool                caseIgnore)
+    :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+{
     _queue = mbed_event_queue();
 }
 
@@ -35,9 +76,9 @@ Transmission::Transmission(
 Transmission::Transmission(
     EthernetInterface   *eth,
     string              (*processing)(string),
-    void                (*startuped)(void),
+    void                (*ethup)(void),
     bool                caseIgnore)
-    :_eth(eth), _processing(processing), _startuped(startuped), _caseIgnore(caseIgnore)
+    :_eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     _queue = mbed_event_queue();
 }
@@ -46,7 +87,8 @@ Transmission::Transmission(
     USBCDC              *usb,
     string              (*processing)(string),
     bool                caseIgnore)
-    :_usb(usb), _processing(processing), _caseIgnore(caseIgnore){}
+    :_usb(usb), _processing(processing), _caseIgnore(caseIgnore)
+{}
 
 string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, const uint16_t& TIMEOUT)
 {
@@ -126,7 +168,7 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    if(_startuped) _queue->call(_startuped);
+                    if(_ethup) _queue->call(_ethup);
                 }
     return message.CONNECT;
 }
@@ -178,7 +220,7 @@ void Transmission::serial_event(void)
     static uint16_t size = 0;
     char caractere;
     _serial->read(&caractere, 1);
-    if((caractere == '\n') || (caractere == '\r'))
+    if(caractere == '\n')
     {
         buffer[size] = '\0';
         size = 0;
@@ -191,14 +233,18 @@ Transmission::enum_trans_status Transmission::recv(void)
 {
     if(_usb)
     {
-        _usb->connect();
         if(_usb->ready())
         {
-            uint32_t size = 0;
+            uint32_t ack = 0, size = 0;
             uint8_t buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
-            _usb->receive_nb(buffer, TRANSMISSION_DEFAULT_BUFFER_SIZE, &size);
+            do{
+                ack = 0;
+                _usb->receive_nb(&buffer[size], 1, &ack);   // un peu plus rapide sur les petits transferts
+                size += ack;
+            }while(ack && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE-1) && (buffer[size-ack] != '\n'));
             if(size && _processing) preprocessing((char *)buffer, USB);
         }
+        else _usb->connect();
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
@@ -206,8 +252,13 @@ Transmission::enum_trans_status Transmission::recv(void)
         nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK, size = 0;
         while((ack = _clientTCP->recv(&buffer[size], TRANSMISSION_DEFAULT_BUFFER_SIZE-size)) > NSAPI_ERROR_OK) size += ack;
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
-        if(!size) message.BREAK = ((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION));
-        if(_processing) preprocessing(buffer, TCP);
+        if(!size && (ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION))
+        {
+            eth_error("clientTCP_disconnect", _clientTCP->close());
+            eth_state();
+            serverTCP_event();
+        }
+        if(size && _processing) preprocessing(buffer, TCP);
     }
     return message.status;
 }
@@ -218,7 +269,7 @@ void Transmission::preprocessing(char *buffer, const enum_trans_delivery deliver
     for(char &c : cmd) if(_caseIgnore && (c >= 'a') && (c <= 'z')) c += 'A'-'a';
     if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
         send(_processing(cmd), Transmission::HTTP);
-    else
+    else if(!cmd.empty() && (cmd[0] != 22))
     {
         for(char &c : cmd) if(c == '\n') c = ';';
         istringstream srecv(cmd);
@@ -237,16 +288,18 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& 
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
     if(_usb && !buff.empty() && ((delivery == USB) || (delivery == ANY)))
-        _usb->send((uint8_t*)ssend.c_str(), ssend.size());
+    {
+        _usb->connect();
+        if(_usb->ready()) _usb->send((uint8_t*)ssend.c_str(), ssend.size());
+    }
     if(_serial  && !buff.empty() && ((delivery == SERIAL) || (delivery == ANY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
     if(_eth && ((delivery == TCP) || (delivery == HTTP) || (delivery == ANY)))
     {
-        if(!message.BREAK && (message.status == BLUE_CLIENT) && !buff.empty())
+        if((message.status == BLUE_CLIENT) && !buff.empty())
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-        if(message.BREAK || (delivery == HTTP))
+        if(delivery == HTTP)
         {
-            message.BREAK = false;
             eth_error("clientTCP_disconnect", _clientTCP->close());
             eth_state();
             serverTCP_event();
