@@ -224,7 +224,7 @@ void Transmission::serial_event(void)
     {
         buffer[size] = '\0';
         size = 0;
-        if(_processing) _queue->call(this, &Transmission::preprocessing, buffer, SERIAL);
+        if(_processing) _queue->call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
     }
     else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_DEFAULT_BUFFER_SIZE-2))) buffer[size++] = caractere;
 }
@@ -242,9 +242,8 @@ Transmission::enum_trans_status Transmission::recv(void)
                 _usb->receive_nb(&buffer[size], 1, &ack);   // un peu plus rapide sur les petits transferts
                 size += ack;
             }while(ack && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE-1) && (buffer[size-ack] != '\n'));
-            if(size && _processing) preprocessing((char *)buffer, USB);
-        }
-        else _usb->connect();
+            if(size && _processing) preprocessing((char *)buffer, USB_DELIVERY);
+        } else _usb->connect();
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
@@ -258,8 +257,8 @@ Transmission::enum_trans_status Transmission::recv(void)
             eth_state();
             serverTCP_event();
         }
-        if(size && _processing) preprocessing(buffer, TCP);
-    }
+        if(size && _processing) preprocessing(buffer, TCP_DELIVERY);
+    } else if(!_usb) ThisThread::sleep_for(100ms);
     return message.status;
 }
 
@@ -268,7 +267,7 @@ void Transmission::preprocessing(char *buffer, const enum_trans_delivery deliver
     string cmd(buffer);
     for(char &c : cmd) if(_caseIgnore && (c >= 'a') && (c <= 'z')) c += 'A'-'a';
     if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
-        send(_processing(cmd), Transmission::HTTP);
+        send(_processing(cmd), Transmission::HTTP_DELIVERY);
     else if(!cmd.empty() && (cmd[0] != 22))
     {
         for(char &c : cmd) if(c == '\n') c = ';';
@@ -287,18 +286,18 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& 
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     string ssend(buff+"\n");
-    if(_usb && !buff.empty() && ((delivery == USB) || (delivery == ANY)))
+    if(_usb && !buff.empty() && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
         _usb->connect();
         if(_usb->ready()) _usb->send((uint8_t*)ssend.c_str(), ssend.size());
     }
-    if(_serial  && !buff.empty() && ((delivery == SERIAL) || (delivery == ANY)))
+    if(_serial  && !buff.empty() && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
-    if(_eth && ((delivery == TCP) || (delivery == HTTP) || (delivery == ANY)))
+    if(_eth && ((delivery == TCP_DELIVERY) || (delivery == HTTP_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
         if((message.status == BLUE_CLIENT) && !buff.empty())
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-        if(delivery == HTTP)
+        if(delivery == HTTP_DELIVERY)
         {
             eth_error("clientTCP_disconnect", _clientTCP->close());
             eth_state();

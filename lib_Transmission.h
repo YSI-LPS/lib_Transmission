@@ -43,7 +43,7 @@ class Transmission
         * @param 
         * @returns 
         */
-        typedef enum { USB, SERIAL, TCP, HTTP, ANY }
+        typedef enum { USB_DELIVERY, SERIAL_DELIVERY, TCP_DELIVERY, HTTP_DELIVERY, ANY_DELIVERY }
             enum_trans_delivery;
         /** 
         *
@@ -51,7 +51,7 @@ class Transmission
         * @param 
         * @returns 
         */
-        typedef enum { WHITE, CYAN, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE }
+        typedef enum { WHITE_STATUS, CYAN_STATUS, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE }
             enum_trans_status;
         /** 
         *
@@ -183,7 +183,7 @@ class Transmission
         * @param 
         * @returns 
         */
-        nsapi_error_t       send(const string& BUFFER="", const enum_trans_delivery& DELIVERY=ANY);
+        nsapi_error_t       send(const string& BUFFER="", const enum_trans_delivery& DELIVERY=ANY_DELIVERY);
         /** 
         *
         * @param 
