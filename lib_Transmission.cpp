@@ -1,4 +1,5 @@
 #include "lib_Transmission.h"
+#include <sstream>
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -235,30 +236,34 @@ Transmission::enum_trans_status Transmission::recv(void)
     {
         if(_usb->ready())
         {
-            uint32_t ack = 0, size = 0;
             uint8_t buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
+            uint32_t ack = 0, size = 0;
             do{
-                ack = 0;
+                ack = NSAPI_ERROR_OK;
                 _usb->receive_nb(&buffer[size], 1, &ack);   // un peu plus rapide sur les petits transferts
                 size += ack;
-            }while(ack && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE-1) && (buffer[size-ack] != '\n'));
+            }while((ack > NSAPI_ERROR_OK) && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE-1) && (buffer[size-ack] != '\n'));
             if(size && _processing) preprocessing((char *)buffer, USB_DELIVERY);
         } else _usb->connect();
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
         char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
-        nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK, size = 0;
-        while((ack = _clientTCP->recv(&buffer[size], TRANSMISSION_DEFAULT_BUFFER_SIZE-size)) > NSAPI_ERROR_OK) size += ack;
+        nsapi_error_t ack = 0, size = 0;
+        do{
+            ack = _clientTCP->recv(&buffer[0], TRANSMISSION_DEFAULT_BUFFER_SIZE-size);
+            if(ack > NSAPI_ERROR_OK) size += ack;
+        }while((ack == 536) && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE));
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
-        if(!size && (ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION))
+        if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION))
         {
             eth_error("clientTCP_disconnect", _clientTCP->close());
             eth_state();
             serverTCP_event();
         }
         if(size && _processing) preprocessing(buffer, TCP_DELIVERY);
-    } else if(!_usb) ThisThread::sleep_for(100ms);
+    }
+    else if(!_usb) for(int i = 0; ((i < 10) && (message.status != BLUE_CLIENT)); i++) ThisThread::sleep_for(10ms);
     return message.status;
 }
 
