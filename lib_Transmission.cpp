@@ -1,5 +1,4 @@
 #include "lib_Transmission.h"
-#include <sstream>
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -15,7 +14,7 @@ Transmission::Transmission(
     :_serial(serial), _usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _queue = mbed_event_queue();
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -30,7 +29,7 @@ Transmission::Transmission(
     :_serial(serial), _usb(usb), _processing(processing), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _queue = mbed_event_queue();
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -46,18 +45,7 @@ Transmission::Transmission(
     :_serial(serial), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _queue = mbed_event_queue();
-}
-
-Transmission::Transmission(
-    USBCDC              *usb,
-    EthernetInterface   *eth,
-    string              (*processing)(string),
-    void                (*ethup)(void),
-    bool                caseIgnore)
-    :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
-{
-    _queue = mbed_event_queue();
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -71,7 +59,18 @@ Transmission::Transmission(
     :_serial(serial), _processing(processing), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _queue = mbed_event_queue();
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+}
+
+Transmission::Transmission(
+    USBCDC              *usb,
+    EthernetInterface   *eth,
+    string              (*processing)(string),
+    void                (*ethup)(void),
+    bool                caseIgnore)
+    :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+{
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -81,7 +80,7 @@ Transmission::Transmission(
     bool                caseIgnore)
     :_eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
-    _queue = mbed_event_queue();
+    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
 }
     
 Transmission::Transmission(
@@ -91,7 +90,24 @@ Transmission::Transmission(
     :_usb(usb), _processing(processing), _caseIgnore(caseIgnore)
 {}
 
-string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, const uint16_t& TIMEOUT)
+string Transmission::ip(string IP)
+{
+    if(!_eth) return "0.0.0.0";
+    ostringstream address;
+    SocketAddress socket;
+    _eth->get_ip_address(&socket);
+    address << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0") << ":" << message.PORT;
+    if(IP == address.str())
+    {
+        _eth->get_netmask(&socket);
+        address << " " << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+        _eth->get_gateway(&socket);
+        address << " " << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+    }
+    return address.str();
+}
+
+string Transmission::ip(const bool SET, const char* IP, const uint16_t PORT, const char* MASK, const char* GATEWAY, const uint16_t TIMEOUT)
 {
     if(!_eth) return "00:00:00:00:00:00";
     if(message.SET && SET)
@@ -107,20 +123,12 @@ string Transmission::ip(const bool& SET, const char* IP, const uint16_t& PORT, c
     message.SET = SET;
     message.IP = IP;
     message.PORT = PORT;
+    message.MASK = MASK;
+    message.GATEWAY = GATEWAY;
     message.TIMEOUT = TIMEOUT;
     message.DHCP = message.IP.empty();
     eth_connect();
     return _eth->get_mac_address()?_eth->get_mac_address():"00:00:00:00:00:00";
-}
-
-string Transmission::ip(void)
-{
-    if(!_eth) return "0.0.0.0";
-    SocketAddress ip;
-    _eth->get_ip_address(&ip);
-    string address(ip.get_ip_address()?ip.get_ip_address():"0.0.0.0");
-    address += ":" + to_string(message.PORT);
-    return address;
 }
 
 bool Transmission::eth_connect(void)
@@ -133,7 +141,7 @@ bool Transmission::eth_connect(void)
             case NSAPI_STATUS_DISCONNECTED:
                 eth_error("Ethernet_blocking", _eth->set_blocking(false));
                 eth_error("Ethernet_dhcp", _eth->set_dhcp(message.DHCP));
-                if(!message.DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(message.IP.c_str()), SocketAddress("255.255.255.0"), SocketAddress("192.168.1.1")));
+                if(!message.DHCP) eth_error("Ethernet_static", _eth->set_network(SocketAddress(message.IP.c_str()), SocketAddress(message.MASK.c_str()), SocketAddress(message.GATEWAY.c_str())));
                 _eth->attach(callback(this, &Transmission::eth_event));
                 eth_error("Ethernet_connect", _eth->connect()); break;
             case NSAPI_STATUS_GLOBAL_UP: return message.CONNECT;break;
@@ -169,14 +177,14 @@ bool Transmission::serverTCP_connect(void)
                     _serverTCP.set_blocking(false);
                     _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
                     message.CONNECT = true;
-                    if(_ethup) _queue->call(_ethup);
+                    if(_ethup) _queue.call(_ethup);
                 }
     return message.CONNECT;
 }
 
 void Transmission::serverTCP_event(void)
 {
-    _queue->call(this, &Transmission::serverTCP_accept);
+    _queue.call(this, &Transmission::serverTCP_accept);
 }
 
 void Transmission::serverTCP_accept(void)
@@ -217,17 +225,17 @@ void Transmission::eth_state(void)
 
 void Transmission::serial_event(void)
 {
-    static char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
-    static uint16_t size = 0;
     char caractere;
+    static uint16_t size = 0;
+    static char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
     _serial->read(&caractere, 1);
-    if(caractere == '\n')
+    if((caractere == '\n') || (size == (TRANSMISSION_DEFAULT_BUFFER_SIZE-1)))
     {
         buffer[size] = '\0';
         size = 0;
-        if(_processing) _queue->call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
+        if(_processing) _queue.call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
     }
-    else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_DEFAULT_BUFFER_SIZE-2))) buffer[size++] = caractere;
+    else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_DEFAULT_BUFFER_SIZE-1))) buffer[size++] = caractere;
 }
 
 Transmission::enum_trans_status Transmission::recv(void)
@@ -272,7 +280,7 @@ void Transmission::preprocessing(char *buffer, const enum_trans_delivery deliver
     string cmd(buffer);
     for(char &c : cmd) if(_caseIgnore && (c >= 'a') && (c <= 'z')) c += 'A'-'a';
     if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
-        send(_processing(cmd), Transmission::HTTP_DELIVERY);
+        send(_processing(cmd), HTTP_DELIVERY);
     else if(!cmd.empty() && (cmd[0] != 22))
     {
         for(char &c : cmd) if(c == '\n') c = ';';
@@ -338,9 +346,9 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     }
     if(sFROM.empty()) return code == "220250250250221";
     #if MBED_MAJOR_VERSION > 5
-    else if(code != "220250250250354250221") _queue->call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
+    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
     #else
-    else if(code != "220250250250354250221") _queue->call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
+    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
     #endif
     return code == "220250250250354250221";
 }
