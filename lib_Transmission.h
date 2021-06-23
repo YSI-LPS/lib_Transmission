@@ -6,13 +6,35 @@
 *
 * Example:
 * @code
-* #include "mbed.h"
-*  
-* int main()
+* #define MBED_PROJECT    "Transmission"
+* 
+* #include "lib_Transmission.h"
+* 
+* #if MBED_MAJOR_VERSION > 5
+* UnbufferedSerial    pc(USBTX, USBRX, 230400);
+* #else
+* Serial              pc(USBTX, USBRX, 230400);
+* #endif
+* 
+* string              transmission_processing(string);
+* Transmission        transmission(&pc, &transmission_processing);
+* 
+* int main(void)
 * {
-*     while(1)
-*     {
-*     }
+*     while(1) ThisThread::sleep_for(200ms);
+* }
+* 
+* string transmission_processing(string cmd)
+* {
+*     ostringstream ssend;
+*     ssend << fixed;
+*     ssend.precision(2);
+*     if(cmd.empty());
+*     else if(cmd == "*IDN?")
+*         ssend << MBED_PROJECT << ", Mbed OS " << MBED_VERSION << ", Version dated, " << __DATE__ << ", " << __TIME__;
+*     else if(cmd[cmd.size()-1] == '?')
+*         ssend << "incorrect requeste [" << cmd << "]";
+*     return ssend.str();
 * }
 * @endcode
 * @file          lib_Transmission.h 
@@ -162,14 +184,14 @@ class Transmission
         * @param 
         * @returns 
         */
-        string              ip(const bool& SET, const char* IP="", const uint16_t& PORT=80, const uint16_t& TIMEOUT=100);
+        string              ip(const bool SET, const char* IP="", const uint16_t PORT=80, const char* MASK="255.255.255.0", const char* GATEWAY="192.168.1.1", const uint16_t TIMEOUT=100);
         /** 
         *
         * @param 
         * @param 
         * @returns 
         */
-        string              ip(void);
+        string              ip(string IP="");
         /** 
         *
         * @param 
@@ -206,31 +228,28 @@ class Transmission
         Serial              *_serial = NULL;
         #endif
         TCPSocket           _serverTCP, *_clientTCP = NULL;
-        EventQueue          *_queue = NULL;
+        Thread              _eventThread;
+        EventQueue          _queue;
         EthernetInterface   *_eth = NULL;
         USBCDC              *_usb = NULL;
         bool                _caseIgnore = false;
 
-        /* Serial */
         void                serial_event(void);
 
-        /* EthernetInterface */
         void                eth_state(void);
         bool                eth_connect(void);
         void                eth_event(nsapi_event_t, intptr_t);
         intptr_t            eth_status(const string&, const intptr_t&);
         nsapi_error_t       eth_error(const string& SOURCE, const nsapi_error_t& CODE);
 
-        /* serverTCP */
         bool                serverTCP_connect(void);
         void                serverTCP_accept(void);
         void                serverTCP_event(void);
 
-        /* Transmission */
         void                (*_ethup)(void);
         string              (*_processing)(string);
-        void                preprocessing(char *buffer, const enum_trans_delivery);
-        struct              { enum_trans_status status; bool SET; bool DHCP; bool CONNECT; string IP; uint16_t TIMEOUT; uint16_t PORT; }
-                            message = { RED_DISCONNECTED, false, false, false, "", 100, 80 };
+        void                preprocessing(char *, const enum_trans_delivery);
+        struct              { enum_trans_status status; bool SET; bool DHCP; bool CONNECT; string IP; uint16_t PORT; string MASK; string GATEWAY; uint16_t TIMEOUT; }
+                            message = { RED_DISCONNECTED, false, false, false, "192.168.1.1", 80, "255.255.255.0", "192.168.1.0", 100 };
 };
 #endif
