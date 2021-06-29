@@ -14,7 +14,8 @@ Transmission::Transmission(
     :_serial(serial), _usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -29,7 +30,8 @@ Transmission::Transmission(
     :_serial(serial), _usb(usb), _processing(processing), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -45,7 +47,8 @@ Transmission::Transmission(
     :_serial(serial), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -59,7 +62,8 @@ Transmission::Transmission(
     :_serial(serial), _processing(processing), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -70,7 +74,8 @@ Transmission::Transmission(
     bool                caseIgnore)
     :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
 Transmission::Transmission(
@@ -80,7 +85,8 @@ Transmission::Transmission(
     bool                caseIgnore)
     :_eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
 {
-    _eventThread.start(callback(&_queue, &EventQueue::dispatch_forever));
+    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_DEFAULT_THREAD_SIZE);
+    _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
     
 Transmission::Transmission(
@@ -90,14 +96,14 @@ Transmission::Transmission(
     :_usb(usb), _processing(processing), _caseIgnore(caseIgnore)
 {}
 
-string Transmission::ip(string IP)
+string Transmission::ip(string ip)
 {
     if(!_eth) return "0.0.0.0";
     ostringstream address;
     SocketAddress socket;
     _eth->get_ip_address(&socket);
     address << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0") << ":" << message.PORT;
-    if(IP == address.str())
+    if(ip == address.str())
     {
         _eth->get_netmask(&socket);
         address << " " << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
@@ -107,12 +113,12 @@ string Transmission::ip(string IP)
     return address.str();
 }
 
-string Transmission::ip(const bool SET, const char* IP, const uint16_t PORT, const char* MASK, const char* GATEWAY, const uint16_t TIMEOUT)
+string Transmission::ip(const bool set, const char* ip, const uint16_t port, const char* mask, const char* gateway, const uint16_t timeout)
 {
     if(!_eth) return "00:00:00:00:00:00";
-    if(message.SET && SET)
+    if(message.SET && set)
     {
-        if(message.PORT != PORT)
+        if(message.PORT != port)
         {
             message.CONNECT = false;
             _serverTCP.sigio(NULL);
@@ -120,12 +126,12 @@ string Transmission::ip(const bool SET, const char* IP, const uint16_t PORT, con
         }
         eth_error("Ethernet_disconnect", _eth->disconnect());
     }
-    message.SET = SET;
-    message.IP = IP;
-    message.PORT = PORT;
-    message.MASK = MASK;
-    message.GATEWAY = GATEWAY;
-    message.TIMEOUT = TIMEOUT;
+    message.SET = set;
+    message.IP = ip;
+    message.PORT = port;
+    message.MASK = mask;
+    message.GATEWAY = gateway;
+    message.TIMEOUT = timeout;
     message.DHCP = message.IP.empty();
     eth_connect();
     return _eth->get_mac_address()?_eth->get_mac_address():"00:00:00:00:00:00";
@@ -295,20 +301,20 @@ void Transmission::preprocessing(char *buffer, const enum_trans_delivery deliver
     }
 }
 
-nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& delivery)
+nsapi_error_t Transmission::send(const string& buffer, const enum_trans_delivery& delivery)
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
-    string ssend(buff+"\n");
-    if(_usb && !buff.empty() && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
+    string ssend(buffer+"\n");
+    if(_usb && !buffer.empty() && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
         _usb->connect();
         if(_usb->ready()) _usb->send((uint8_t*)ssend.c_str(), ssend.size());
     }
-    if(_serial  && !buff.empty() && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
+    if(_serial  && !buffer.empty() && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
     if(_eth && ((delivery == TCP_DELIVERY) || (delivery == HTTP_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
-        if((message.status == BLUE_CLIENT) && !buff.empty())
+        if((message.status == BLUE_CLIENT) && !buffer.empty())
             eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
         if(delivery == HTTP_DELIVERY)
         {
@@ -320,13 +326,33 @@ nsapi_error_t Transmission::send(const string& buff, const enum_trans_delivery& 
     return ack;
 }
 
-bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT, const char* DATA, const char* SERVER)
+string Transmission::get(const string& ssend, const string& server, const int& port)
+{
+    char buffer[256] = {0};
+    if(!server.empty())
+    {
+        TCPSocket clientTCP;
+        clientTCP.set_timeout(2000);
+        if(eth_error("clientTCP_open", clientTCP.open(_eth)) == NSAPI_ERROR_OK)
+        {
+            if(eth_error("clientTCP_connect", clientTCP.connect(SocketAddress(server.c_str(), port))) == NSAPI_ERROR_OK)
+            {
+                eth_error("clientTCP_send", clientTCP.send(ssend.c_str(), ssend.size()));
+                eth_error("clientTCP_recv", clientTCP.recv(buffer, 256));
+            }
+        }
+        eth_error("clientTCP_close", clientTCP.close());
+    }
+    return buffer;
+}
+
+bool Transmission::smtp(const char* mail, const char* from, const char* subject, const char* data, const char* server)
 {
     if(!_eth) return false;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(2000);
-    string sMAIL(MAIL), sFROM(FROM), sSUBJECT(SUBJECT), sDATA(DATA), sTO(sMAIL.substr(0, sMAIL.find("@")));
+    string sMAIL(mail), sFROM(from), sSUBJECT(subject), sDATA(data), sTO(sMAIL.substr(0, sMAIL.find("@")));
     string smtpParams[][7] = {  { "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n\r\n.\r\n", "QUIT\r\n" },
                                 { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
     string code;
@@ -335,7 +361,7 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
         for(const string& ssend : smtpParams[(sFROM.empty())?1:0])
         {
             char buffer[256] = {0};
-            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(SERVER, 25))) < NSAPI_ERROR_OK)      break; }
+            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)      break; }
             else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                        break;
             if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 256)) < NSAPI_ERROR_OK)                                             break;
             buffer[3] = 0;
@@ -346,14 +372,14 @@ bool Transmission::smtp(const char* MAIL, const char* FROM, const char* SUBJECT,
     }
     if(sFROM.empty()) return code == "220250250250221";
     #if MBED_MAJOR_VERSION > 5
-    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
+    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
     #else
-    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, MAIL, FROM, SUBJECT, DATA, SERVER);
+    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
     #endif
     return code == "220250250250354250221";
 }
 
-time_t Transmission::ntp(const char* SERVER)
+time_t Transmission::ntp(const char* server)
 {
     if(!_eth) return 0;
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
@@ -363,10 +389,10 @@ time_t Transmission::ntp(const char* SERVER)
     if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
     {
         uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
-        SocketAddress server(SERVER, 123);
-        string sSERVER(SERVER);
-        if(sSERVER != TRANSMISSION_DEFAULT_NTP_SERVER) eth_error("eth_gethostbyname", _eth->gethostbyname(sSERVER.c_str(), &server));
-        if(eth_error("clientNTP_send", clientNTP.sendto(server, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+        SocketAddress aSERVER(server, 123);
+        string sSERVER(server);
+        if(sSERVER != TRANSMISSION_DEFAULT_NTP_SERVER) eth_error("eth_gethostbyname", _eth->gethostbyname(sSERVER.c_str(), &aSERVER));
+        if(eth_error("clientNTP_send", clientNTP.sendto(aSERVER, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
         {
             if(eth_error("clientNTP_recv", clientNTP.recvfrom(NULL, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
             {
