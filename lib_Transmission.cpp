@@ -265,7 +265,7 @@ Transmission::enum_trans_status Transmission::recv(void)
         char buffer[TRANSMISSION_DEFAULT_BUFFER_SIZE] = {0};
         nsapi_error_t ack = 0, size = 0;
         do{
-            ack = _clientTCP->recv(&buffer[0], TRANSMISSION_DEFAULT_BUFFER_SIZE-size);
+            ack = _clientTCP->recv(&buffer[size], TRANSMISSION_DEFAULT_BUFFER_SIZE-size);
             if(ack > NSAPI_ERROR_OK) size += ack;
         }while((ack == 536) && (size < TRANSMISSION_DEFAULT_BUFFER_SIZE));
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
