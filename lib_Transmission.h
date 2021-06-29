@@ -43,7 +43,7 @@
 */
 #ifndef TRANSMISSION_H
 #define TRANSMISSION_H
-//#define NDEBUG
+#define NDEBUG
 
 #include <sstream>
 #include "mbed.h"
