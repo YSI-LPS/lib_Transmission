@@ -43,14 +43,15 @@
 */
 #ifndef TRANSMISSION_H
 #define TRANSMISSION_H
-#define NDEBUG
+//#define NDEBUG
 
+#include <sstream>
 #include "mbed.h"
 #include "USBCDC.h"
 #include "EthernetInterface.h"
-#include <sstream>
 
 #define TRANSMISSION_DEFAULT_BUFFER_SIZE    1072                // taille des buffers de reception
+#define TRANSMISSION_DEFAULT_THREAD_SIZE    OS_STACK_SIZE       // taille du thread transmission
 #define TRANSMISSION_DEFAULT_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
 #define TRANSMISSION_DEFAULT_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
@@ -59,34 +60,20 @@
 class Transmission
 {
     public:
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns 
+        /** enumerator of the different possible delivery of the transmission library
         */
         typedef enum { USB_DELIVERY, SERIAL_DELIVERY, TCP_DELIVERY, HTTP_DELIVERY, ANY_DELIVERY }
             enum_trans_delivery;
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns 
+        /** enumerator of the different ethernet connexion status of the transmission library
         */
         typedef enum { WHITE_STATUS, CYAN_STATUS, MAGENTA_ACCEPT, BLUE_CLIENT, YELLOW_CONNECTING, GREEN_GLOBAL_UP, RED_DISCONNECTED, BLACK_INITIALIZE }
             enum_trans_status;
-        /** 
-        *
-        * @param 
-        * @param 
-        * @returns 
+        /** List of http headers returns
         */
         struct { const char *RETURN_OK; const char *RETURN_NO_CONTENT; const char *RETURN_MOVED; const char *RETURN_FOUND; const char *RETURN_SEE_OTHER; const char *RETURN_REDIRECT; const char *RETURN_NOT_FOUND; }
             http = { "HTTP/1.1 200 OK\r\n", "HTTP/1.1 204 No Content\r\n", "HTTP/1.1 301 Moved Permanently\r\n", "HTTP/1.1 302 Found\r\n", "HTTP/1.1 303 See Other\r\n", "HTTP/1.1 307 Temporary Redirect\r\n", "HTTP/1.1 404 Not Found\r\n" };
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -101,9 +88,7 @@ class Transmission
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -116,9 +101,7 @@ class Transmission
             string              (*processing)(string),
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -132,9 +115,7 @@ class Transmission
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -144,9 +125,7 @@ class Transmission
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -158,9 +137,7 @@ class Transmission
             string              (*processing)(string),
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
@@ -169,57 +146,61 @@ class Transmission
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
-        * connected to 
         *
-        * @param 
         * @param 
         */
         Transmission(
             USBCDC              *usb,
             string              (*processing)(string),
             bool                caseIgnore = true);
-        /** 
+        /** Configure the TCP connection
         *
-        * @param 
-        * @param 
-        * @returns 
+        * @param set enable for the tcp connection
+        * @returns MAC adress
         */
-        string              ip(const bool SET, const char* IP="", const uint16_t PORT=80, const char* MASK="255.255.255.0", const char* GATEWAY="192.168.1.1", const uint16_t TIMEOUT=100);
-        /** 
+        string              ip(const bool set, const char* ip="", const uint16_t port=80, const char* mask="255.255.255.0", const char* gateway="192.168.1.1", const uint16_t timeout=100);
+        /** Return ip config
         *
-        * @param 
-        * @param 
-        * @returns 
+        * @param ip="" If the specified ip is the one configured gives the complete ip configuration
+        * @returns ip config
         */
-        string              ip(string IP="");
-        /** 
+        string              ip(string ip="");
+        /** scans the reception buffers of transmission TCP and USB
         *
-        * @param 
-        * @param 
-        * @returns 
+        * @returns enumerator of the different ethernet connexion status of the transmission library
         */
         enum_trans_status   recv(void);
-        /** 
+        /** send the buffer to the specified transmission delivery
         *
-        * @param 
-        * @param 
+        * @param buffer sent over transmission
+        * @param delivery of the transmission
         * @returns 
         */
-        nsapi_error_t       send(const string& BUFFER="", const enum_trans_delivery& DELIVERY=ANY_DELIVERY);
-        /** 
+        nsapi_error_t       send(const string& buffer="", const enum_trans_delivery& delivery=ANY_DELIVERY);
+        /** send a request to a server at the specified port
         *
-        * @param 
-        * @param 
-        * @returns 
+        * @param request sent to server
+        * @param server ip
+        * @param server port
+        * @returns server response
         */
-        bool                smtp(const char* MAIL, const char* FROM="", const char* SUBJECT="", const char* DATA="", const char* SERVER=TRANSMISSION_DEFAULT_SMTP_SERVER);
-        /** 
+        string              get(const string& buffer, const string& server="", const int& port=80);
+        /** send an email to an smtp server
         *
-        * @param 
-        * @param 
-        * @returns 
+        * @param mail is the recipient's email
+        * @param from="" this is the sender's email
+        * @param subject="" this is the subject of the email
+        * @param data="" this is the content of the email
+        * @param server="" this is an ip from an smtp server
+        * @returns indicates if the smtp transaction was successful
         */
-        time_t              ntp(const char* SERVER=TRANSMISSION_DEFAULT_NTP_SERVER);
+        bool                smtp(const char* mail, const char* from="", const char* subject="", const char* data="", const char* server=TRANSMISSION_DEFAULT_SMTP_SERVER);
+        /** time request to an ntp server
+        *
+        * @param server="" this is an ip from an ntp server
+        * @returns time
+        */
+        time_t              ntp(const char* server=TRANSMISSION_DEFAULT_NTP_SERVER);
 
     private:
         #if MBED_MAJOR_VERSION > 5
@@ -228,7 +209,7 @@ class Transmission
         Serial              *_serial = NULL;
         #endif
         TCPSocket           _serverTCP, *_clientTCP = NULL;
-        Thread              _eventThread;
+        Thread              *_evenThread = NULL;
         EventQueue          _queue;
         EthernetInterface   *_eth = NULL;
         USBCDC              *_usb = NULL;
