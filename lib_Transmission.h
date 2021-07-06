@@ -50,10 +50,10 @@
 #include "USBCDC.h"
 #include "EthernetInterface.h"
 
-#define TRANSMISSION_DEFAULT_BUFFER_SIZE    1072                // taille des buffers de reception
-#define TRANSMISSION_DEFAULT_THREAD_SIZE    OS_STACK_SIZE       // taille du thread transmission
-#define TRANSMISSION_DEFAULT_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
-#define TRANSMISSION_DEFAULT_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
+#define TRANSMISSION_BUFFER_SIZE    1072                // taille des buffers de reception
+#define TRANSMISSION_THREAD_SIZE    OS_STACK_SIZE       // taille du thread transmission
+#define TRANSMISSION_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
+#define TRANSMISSION_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
 /** Transmission class
  */
@@ -165,6 +165,11 @@ class Transmission
         * @returns ip config
         */
         string              ip(string ip="");
+        /** Return client config
+        *
+        * @returns ip:port config
+        */
+        string              client(void);
         /** scans the reception buffers of transmission TCP and USB
         *
         * @returns enumerator of the different ethernet connexion status of the transmission library
@@ -194,13 +199,13 @@ class Transmission
         * @param server="" this is an ip from an smtp server
         * @returns indicates if the smtp transaction was successful
         */
-        bool                smtp(const char* mail, const char* from="", const char* subject="", const char* data="", const char* server=TRANSMISSION_DEFAULT_SMTP_SERVER);
+        bool                smtp(const char* mail, const char* from="", const char* subject="", const char* data="", const char* server=TRANSMISSION_SMTP_SERVER);
         /** time request to an ntp server
         *
         * @param server="" this is an ip from an ntp server
         * @returns time
         */
-        time_t              ntp(const char* server=TRANSMISSION_DEFAULT_NTP_SERVER);
+        time_t              ntp(const char* server=TRANSMISSION_NTP_SERVER);
 
     private:
         #if MBED_MAJOR_VERSION > 5
