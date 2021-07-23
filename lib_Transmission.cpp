@@ -373,10 +373,10 @@ bool Transmission::smtp(const char* mail, const char* from, const char* subject,
     {
         for(const string& ssend : smtpParams[(sFROM.empty())?1:0])
         {
-            char buffer[256] = {0};
+            char buffer[64] = {0};
             if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)      break; }
             else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                        break;
-            if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 256)) < NSAPI_ERROR_OK)                                             break;
+            if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                             break;
             buffer[3] = 0;
             code += buffer;
             if(ssend == "QUIT\r\n") break;
@@ -395,7 +395,7 @@ bool Transmission::smtp(const char* mail, const char* from, const char* subject,
 time_t Transmission::ntp(const char* server)
 {
     if(!_eth) return 0;
-    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return 0;
+    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return time(NULL);
     time_t timeStamp = 0;
     UDPSocket clientNTP;
     clientNTP.set_timeout(2000);
