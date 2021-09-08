@@ -134,7 +134,9 @@ string Transmission::ip(const bool set, const char* ip, const uint16_t port, con
     message.TIMEOUT = timeout;
     message.DHCP = message.IP.empty();
     eth_connect();
-    return _eth->get_mac_address()?_eth->get_mac_address():"00:00:00:00:00:00";
+    string MAC(_eth->get_mac_address()?_eth->get_mac_address():"00:00:00:00:00:00");
+    for(char &c : MAC) if((c >= 'a') && (c <= 'z')) c += 'A'-'a';
+    return MAC;
 }
 
 string Transmission::client(void)
@@ -345,7 +347,7 @@ string Transmission::get(const string& ssend, const string& server, const int& p
     if(!server.empty())
     {
         TCPSocket clientTCP;
-        clientTCP.set_timeout(2000);
+        clientTCP.set_timeout(message.TIMEOUT);
         if(eth_error("clientTCP_open", clientTCP.open(_eth)) == NSAPI_ERROR_OK)
         {
             if(eth_error("clientTCP_connect", clientTCP.connect(SocketAddress(server.c_str(), port))) == NSAPI_ERROR_OK)
@@ -361,11 +363,11 @@ string Transmission::get(const string& ssend, const string& server, const int& p
 
 bool Transmission::smtp(const char* mail, const char* from, const char* subject, const char* data, const char* server)
 {
-    if(!_eth) return false;
-    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return false;
+    string sMAIL(mail);
+    if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || sMAIL.empty()) return false;
     TCPSocket clientSMTP;
-    clientSMTP.set_timeout(2000);
-    string sMAIL(mail), sFROM(from), sSUBJECT(subject), sDATA(data), sTO(sMAIL.substr(0, sMAIL.find("@")));
+    clientSMTP.set_timeout(message.TIMEOUT);
+    string sFROM(from), sSUBJECT(subject), sDATA(data), sTO(sMAIL.substr(0, sMAIL.find("@")));
     string smtpParams[][7] = {  { "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n\r\n.\r\n", "QUIT\r\n" },
                                 { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
     string code;
@@ -398,7 +400,7 @@ time_t Transmission::ntp(const char* server)
     if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return time(NULL);
     time_t timeStamp = 0;
     UDPSocket clientNTP;
-    clientNTP.set_timeout(2000);
+    clientNTP.set_timeout(message.TIMEOUT);
     if(eth_error("clientNTP_open", clientNTP.open(_eth)) == NSAPI_ERROR_OK)
     {
         uint32_t buffer[12] = { 0b11011, 0 };  // VN = 3 & Mode = 3
