@@ -361,37 +361,42 @@ string Transmission::get(const string& ssend, const string& server, const int& p
     return buffer;
 }
 
-bool Transmission::smtp(const char* mail, const char* from, const char* subject, const char* data, const char* server)
+bool Transmission::smtp(string mail, string from, string subject, string data, const char* server)
 {
-    string sMAIL(mail);
-    if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || sMAIL.empty()) return false;
+    if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
+    string code, smtpParams[][7] = {{ "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n",
+                                      "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mail.substr(0, mail.find("@")) + "." + to_string(time(NULL)) + mail.substr(mail.find("@")) + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" },
+                                    { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + mail + ">\r\n", "QUIT\r\n" }};
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(message.TIMEOUT);
-    string sFROM(from), sSUBJECT(subject), sDATA(data), sTO(sMAIL.substr(0, sMAIL.find("@")));
-    string smtpParams[][7] = {  { "", "HELO Mbed " + sFROM + "\r\n", "MAIL FROM: <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO: <" + sMAIL + ">\r\n", "DATA\r\n", "From: \"Mbed " + sFROM + "\" <Mbed." + sFROM + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo: \"" + sTO + "\" <" + sMAIL + ">\r\nSubject:" + sSUBJECT + "\r\n" + sDATA + "\r\n\r\n.\r\n", "QUIT\r\n" },
-                                { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + sMAIL + ">\r\n", "QUIT\r\n" }};
-    string code;
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
     {
-        for(const string& ssend : smtpParams[(sFROM.empty())?1:0])
+        for(const string& ssend : smtpParams[from.empty()?1:0])
         {
+            
             char buffer[64] = {0};
-            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)      break; }
-            else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                        break;
-            if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                             break;
+            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)  break; }
+            else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                    break;
+            if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                          break;
             buffer[3] = 0;
             code += buffer;
             if(ssend == "QUIT\r\n") break;
         }
         eth_error("clientSMTP_close", clientSMTP.close());
     }
-    if(sFROM.empty()) return code == "220250250250221";
-    #if MBED_MAJOR_VERSION > 5
-    else if(code != "220250250250354250221") _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
-    #else
-    else if(code != "220250250250354250221") _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
-    #endif
-    return code == "220250250250354250221";
+    static int smtp_error = 0;
+    if(from.empty()) return code == "220250250250221";
+    else if((code == "220250250250354250221") || (code == "220250250250354")) smtp_error = 0;
+    else if(smtp_error < 5)
+    {
+        smtp_error++;
+        #if MBED_MAJOR_VERSION > 5
+        _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
+        #else
+        _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
+        #endif
+    }
+    return !smtp_error;
 }
 
 time_t Transmission::ntp(const char* server)
