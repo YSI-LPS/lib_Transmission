@@ -84,7 +84,7 @@ class Transmission
             #endif
             USBCDC              *usb,
             EthernetInterface   *eth,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -98,7 +98,7 @@ class Transmission
             Serial              *serial,
             #endif
             USBCDC              *usb,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -111,7 +111,7 @@ class Transmission
             Serial              *serial,
             #endif
             EthernetInterface   *eth,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -121,7 +121,7 @@ class Transmission
         Transmission(
             USBCDC              *usb,
             EthernetInterface   *eth,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -134,7 +134,7 @@ class Transmission
             #else
             Serial              *serial,
             #endif
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -142,7 +142,7 @@ class Transmission
         */
         Transmission(
             EthernetInterface   *eth,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -151,7 +151,7 @@ class Transmission
         */
         Transmission(
             USBCDC              *usb,
-            string              (*processing)(string),
+            string              (*processing)(string) = NULL,
             bool                caseIgnore = true);
         /** Configure the TCP connection
         *
@@ -189,20 +189,20 @@ class Transmission
         * @param server port
         * @returns server response
         */
-        string              get(const string& buffer, const string& server="", const int& port=80);
+        string              get(const string& buffer, const string& server, const int& port=80);
         /** send an email to an smtp server
         *
         * @param mail is the recipient's email
         * @param from="" this is the sender's email
         * @param subject="" this is the subject of the email
         * @param data="" this is the content of the email
-        * @param server="" this is an ip from an smtp server
+        * @param server="129.175.212.70" this is an ip from an smtp server
         * @returns indicates if the smtp transaction was successful
         */
-        bool                smtp(const char* mail, const char* from="", const char* subject="", const char* data="", const char* server=TRANSMISSION_SMTP_SERVER);
+        bool                smtp(string mail, string from="", string subject="", string data="", const char* server=TRANSMISSION_SMTP_SERVER);
         /** time request to an ntp server
         *
-        * @param server="" this is an ip from an ntp server
+        * @param server="129.175.34.43" this is an ip from an ntp server
         * @returns time
         */
         time_t              ntp(const char* server=TRANSMISSION_NTP_SERVER);
