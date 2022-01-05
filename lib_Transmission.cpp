@@ -246,17 +246,22 @@ void Transmission::eth_state(void)
 
 void Transmission::serial_event(void)
 {
-    char caractere;
-    static uint16_t size = 0;
     static char buffer[TRANSMISSION_BUFFER_SIZE] = {0};
+    static uint16_t size = 0;
+    char caractere;
     _serial->read(&caractere, 1);
-    if((caractere == '\n') || (size == (TRANSMISSION_BUFFER_SIZE-1)))
+    if(caractere == '\n')
     {
         buffer[size] = '\0';
         size = 0;
         if(_processing) _queue.call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
     }
-    else if((caractere > 31) && (caractere < 127) && (size < (TRANSMISSION_BUFFER_SIZE-1))) buffer[size++] = caractere;
+    else if((caractere > 31) && (caractere < 127))
+    {
+        if(size >= (TRANSMISSION_BUFFER_SIZE-1))
+            for(int i = 0; i < size; i++) buffer[i] = (i < size-1)?buffer[i+1]:caractere;
+        else buffer[size++] = caractere;
+    }
 }
 
 Transmission::enum_trans_status Transmission::recv(void)
@@ -384,19 +389,17 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
         }
         eth_error("clientSMTP_close", clientSMTP.close());
     }
-    static int smtp_error = 0;
     if(from.empty()) return code == "220250250250221";
-    else if((code == "220250250250354250221") || (code == "220250250250354")) smtp_error = 0;
-    else if(smtp_error < 5)
+    else if((code == "220250250250354250221") || (code == "220250250250354")) return true;
+    else
     {
-        smtp_error++;
         #if MBED_MAJOR_VERSION > 5
         _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
         #else
         _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
         #endif
     }
-    return !smtp_error;
+    return false;
 }
 
 time_t Transmission::ntp(const char* server)
