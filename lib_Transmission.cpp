@@ -369,14 +369,42 @@ string Transmission::get(const string& ssend, const string& server, const int& p
 bool Transmission::smtp(string mail, string from, string subject, string data, const char* server)
 {
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
-    string code, smtpParams[][7] = {{ "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n",
-                                      "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mail.substr(0, mail.find("@")) + "." + to_string(time(NULL)) + mail.substr(mail.find("@")) + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" },
-                                    { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + mail + ">\r\n", "QUIT\r\n" }};
+    if(from.empty())
+    {
+        string code, smtpParams[] = { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + mail + ">\r\n", "QUIT\r\n" };
+        TCPSocket clientSMTP;
+        clientSMTP.set_timeout(message.TIMEOUT);
+        if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
+        {
+            for(const string& ssend : smtpParams)
+            {
+                
+                char buffer[64] = {0};
+                if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)  break; }
+                else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                    break;
+                if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                          break;
+                buffer[3] = 0;
+                code += buffer;
+                if(ssend == "QUIT\r\n") break;
+            }
+            eth_error("clientSMTP_close", clientSMTP.close());
+        }
+        return code == "220250250250221";
+    }
+    _queue.call(this, &Transmission::smtp_builder, mail, from, subject, data, server); // changement de thread pour alleger le thread appelant
+    return true;
+}
+
+bool Transmission::smtp_builder(string mail, string from, string subject, string data, const char* server)
+{
+    if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
+    string code, smtpParams[] = { "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
+                                "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mail.substr(0, mail.find("@")) + "." + to_string(time(NULL)) + mail.substr(mail.find("@")) + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" };
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(message.TIMEOUT);
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
     {
-        for(const string& ssend : smtpParams[from.empty()?1:0])
+        for(const string& ssend : smtpParams)
         {
             
             char buffer[64] = {0};
@@ -389,14 +417,13 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
         }
         eth_error("clientSMTP_close", clientSMTP.close());
     }
-    if(from.empty()) return code == "220250250250221";
-    else if((code == "220250250250354250221") || (code == "220250250250354")) return true;
+    if((code == "220250250250354250221") || (code == "220250250250354")) return true;
     else
     {
         #if MBED_MAJOR_VERSION > 5
-        _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
+        _queue.call_in(60s, this, &Transmission::smtp_builder, mail, from, subject, data, server);
         #else
-        _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
+        _queue.call_in(60000, this, &Transmission::smtp_builder, mail, from, subject, data, server);
         #endif
     }
     return false;
