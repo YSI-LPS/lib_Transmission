@@ -232,6 +232,8 @@ class Transmission
         void                serverTCP_accept(void);
         void                serverTCP_event(void);
 
+        bool                smtp_builder(string mail, string from, string subject, string data, const char* server);
+
         void                (*_ethup)(void);
         string              (*_processing)(string);
         void                preprocessing(char *, const enum_trans_delivery);
