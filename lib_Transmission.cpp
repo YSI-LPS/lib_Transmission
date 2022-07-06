@@ -366,36 +366,30 @@ string Transmission::get(const string& ssend, const string& server, const int& p
     return buffer;
 }
 
-bool Transmission::smtp(string mail, string from, string subject, string data, const char* server)
+bool Transmission::exist(string mail, const char* server)
 {
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
-    if(from.empty())
+    string code, smtpParams[] = { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + mail + ">\r\n", "QUIT\r\n" };
+    TCPSocket clientSMTP;
+    clientSMTP.set_timeout(message.TIMEOUT);
+    if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
     {
-        string code, smtpParams[] = { "", "HELO Mbed\r\n", "MAIL FROM: <Mbed>\r\n","RCPT TO: <" + mail + ">\r\n", "QUIT\r\n" };
-        TCPSocket clientSMTP;
-        clientSMTP.set_timeout(message.TIMEOUT);
-        if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
+        for(const string& ssend : smtpParams)
         {
-            for(const string& ssend : smtpParams)
-            {
-                
-                char buffer[64] = {0};
-                if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)  break; }
-                else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                    break;
-                if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                          break;
-                buffer[3] = 0;
-                code += buffer;
-                if(ssend == "QUIT\r\n") break;
-            }
-            eth_error("clientSMTP_close", clientSMTP.close());
+            char buffer[64] = {0};
+            if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)  break; }
+            else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                    break;
+            if(eth_error("clientSMTP_recv", clientSMTP.recv(buffer, 64)) < NSAPI_ERROR_OK)                                          break;
+            buffer[3] = 0;
+            code += buffer;
+            if(ssend == "QUIT\r\n") break;
         }
-        return code == "220250250250221";
+        eth_error("clientSMTP_close", clientSMTP.close());
     }
-    _queue.call(this, &Transmission::smtp_builder, mail, from, subject, data, server); // changement de thread pour alleger le thread appelant
-    return true;
+    return code == "220250250250221";
 }
 
-bool Transmission::smtp_builder(string mail, string from, string subject, string data, const char* server)
+bool Transmission::smtp(string mail, string from, string subject, string data, const char* server)
 {
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
     string code, smtpParams[] = { "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
@@ -406,7 +400,6 @@ bool Transmission::smtp_builder(string mail, string from, string subject, string
     {
         for(const string& ssend : smtpParams)
         {
-            
             char buffer[64] = {0};
             if(code.empty()) { if(eth_error("clientSMTP_connect", clientSMTP.connect(SocketAddress(server, 25))) < NSAPI_ERROR_OK)  break; }
             else if(eth_error("clientSMTP_send", clientSMTP.send(ssend.c_str(), ssend.size())) < NSAPI_ERROR_OK)                    break;
@@ -418,14 +411,11 @@ bool Transmission::smtp_builder(string mail, string from, string subject, string
         eth_error("clientSMTP_close", clientSMTP.close());
     }
     if((code == "220250250250354250221") || (code == "220250250250354")) return true;
-    else
-    {
-        #if MBED_MAJOR_VERSION > 5
-        _queue.call_in(60s, this, &Transmission::smtp_builder, mail, from, subject, data, server);
-        #else
-        _queue.call_in(60000, this, &Transmission::smtp_builder, mail, from, subject, data, server);
-        #endif
-    }
+    #if MBED_MAJOR_VERSION > 5
+    _queue.call_in(60s, this, &Transmission::smtp, mail, from, subject, data, server);
+    #else
+    _queue.call_in(60000, this, &Transmission::smtp, mail, from, subject, data, server);
+    #endif
     return false;
 }
 
