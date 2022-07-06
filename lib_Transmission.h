@@ -193,13 +193,20 @@ class Transmission
         /** send an email to an smtp server
         *
         * @param mail is the recipient's email
-        * @param from="" this is the sender's email
-        * @param subject="" this is the subject of the email
-        * @param data="" this is the content of the email
+        * @param from this is the sender's email
+        * @param subject this is the subject of the email
+        * @param data this is the content of the email
         * @param server="129.175.212.70" this is an ip from an smtp server
         * @returns indicates if the smtp transaction was successful
         */
-        bool                smtp(string mail, string from="", string subject="", string data="", const char* server=TRANSMISSION_SMTP_SERVER);
+        bool                smtp(string mail, string from, string subject, string data, const char* server=TRANSMISSION_SMTP_SERVER);
+        /** ask an smtp server if email exist
+        *
+        * @param mail is the recipient's email
+        * @param server="129.175.212.70" this is an ip from an smtp server
+        * @returns indicates if the smtp transaction was successful
+        */
+        bool                exist(string mail, const char* server=TRANSMISSION_SMTP_SERVER);
         /** time request to an ntp server
         *
         * @param server="129.175.34.43" this is an ip from an ntp server
@@ -231,8 +238,6 @@ class Transmission
         bool                serverTCP_connect(void);
         void                serverTCP_accept(void);
         void                serverTCP_event(void);
-
-        bool                smtp_builder(string mail, string from, string subject, string data, const char* server);
 
         void                (*_ethup)(void);
         string              (*_processing)(string);
