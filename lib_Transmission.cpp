@@ -116,6 +116,13 @@ string Transmission::ip(string ip)
 string Transmission::ip(const bool set, const char* ip, const uint16_t port, const char* mask, const char* gateway, const uint16_t timeout)
 {
     if(!_eth) return "00:00:00:00:00:00";
+    if(!message.CONNECT)
+    {
+        eth_error("Ethernet_blocking", _eth->set_blocking(false));
+        eth_error("Ethernet_dhcp", _eth->set_dhcp(true));
+        eth_error("Ethernet_connect", _eth->connect());
+        eth_error("Ethernet_disconnect", _eth->disconnect());
+    }
     if(message.SET && set)
     {
         if(message.PORT != port)
