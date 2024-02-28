@@ -1,4 +1,5 @@
 #include "lib_Transmission.h"
+#include <string>
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -99,18 +100,20 @@ Transmission::Transmission(
 string Transmission::ip(string ip)
 {
     if(!_eth) return "0.0.0.0:0";
-    ostringstream address;
     SocketAddress socket;
     _eth->get_ip_address(&socket);
-    address << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0") << ":" << message.PORT;
-    if(ip == address.str())
+    string address(socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+    address += ":" + to_string(message.PORT);
+    if(ip == address)
     {
         _eth->get_netmask(&socket);
-        address << " " << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+        address += " ";
+        address += (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
         _eth->get_gateway(&socket);
-        address << " " << (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+        address += " ";
+        address += (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
     }
-    return address.str();
+    return address;
 }
 
 string Transmission::ip(const bool set, const char* ip, const uint16_t port, const char* mask, const char* gateway, const uint16_t timeout)
@@ -152,9 +155,8 @@ string Transmission::client(void)
     {
         SocketAddress peer;
         _clientTCP->getpeername(&peer);
-        ostringstream ssend;
-        ssend << peer.get_ip_address() << ":" << peer.get_port();
-        return ssend.str();
+        string speer(peer.get_ip_address());
+        return speer + ":" + to_string(peer.get_port());
     }
     return "0.0.0.0:0";
 }
@@ -399,8 +401,11 @@ bool Transmission::exist(string mail, const char* server)
 bool Transmission::smtp(string mail, string from, string subject, string data, const char* server)
 {
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
+    ostringstream mid;
+    mid << std::hex << std::uppercase << time(NULL);
+    for(char &c : mail) if(mid.str().size() < 30) mid << ((uint32_t)c);
     string code, smtpParams[] = { "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
-                                "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mail.substr(0, mail.find("@")) + "." + to_string(time(NULL)) + mail.substr(mail.find("@")) + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" };
+                                "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mid.str() + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" };
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(message.TIMEOUT);
     if(eth_error("clientSMTP_open", clientSMTP.open(_eth)) == NSAPI_ERROR_OK)
@@ -416,6 +421,7 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
             if(ssend == "QUIT\r\n") break;
         }
         eth_error("clientSMTP_close", clientSMTP.close());
+        ThisThread::sleep_for(1s);
     }
     if((code == "220250250250354250221") || (code == "220250250250354")) return true;
     #if MBED_MAJOR_VERSION > 5
@@ -458,15 +464,14 @@ time_t Transmission::ntp(const char* server)
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 {
     #ifndef NDEBUG
-    ostringstream message;
-    message << "\n" << source << "[" << code << "] ";
+    string message("\n" + source + "[" + to_string(code) + "] ")
     switch(code)
     {
-        case NSAPI_STATUS_LOCAL_UP:             message << "NSAPI_STATUS_LOCAL_UP          < local IP address set >";       break;
-        case NSAPI_STATUS_GLOBAL_UP:            message << "NSAPI_STATUS_GLOBAL_UP         < global IP address set >";      break;
-        case NSAPI_STATUS_DISCONNECTED:         message << "NSAPI_STATUS_DISCONNECTED      < no connection to network >";   break;
-        case NSAPI_STATUS_CONNECTING:           message << "NSAPI_STATUS_CONNECTING        < connecting to network >";      break;
-        case NSAPI_STATUS_ERROR_UNSUPPORTED:    message << "NSAPI_STATUS_ERROR_UNSUPPORTED < unsupported functionality >";  break;
+        case NSAPI_STATUS_LOCAL_UP:             message += "NSAPI_STATUS_LOCAL_UP          < local IP address set >";       break;
+        case NSAPI_STATUS_GLOBAL_UP:            message += "NSAPI_STATUS_GLOBAL_UP         < global IP address set >";      break;
+        case NSAPI_STATUS_DISCONNECTED:         message += "NSAPI_STATUS_DISCONNECTED      < no connection to network >";   break;
+        case NSAPI_STATUS_CONNECTING:           message += "NSAPI_STATUS_CONNECTING        < connecting to network >";      break;
+        case NSAPI_STATUS_ERROR_UNSUPPORTED:    message += "NSAPI_STATUS_ERROR_UNSUPPORTED < unsupported functionality >";  break;
     }
     _serial->write(message.str().c_str(), message.str().size());
     #endif
@@ -476,32 +481,31 @@ intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 nsapi_error_t Transmission::eth_error(const string& source, const nsapi_error_t& code)
 {
     #ifndef NDEBUG
-    ostringstream message;
-    message << "\n" << source << "[" << code << "] ";
+    string message("\n" + source + "[" + to_string(code) + "] ")
     switch(code)
     {
-        case NSAPI_ERROR_OK:                    message << "NSAPI_ERROR_OK                 < no error >";                                           break;
-        case NSAPI_ERROR_WOULD_BLOCK:           message << "NSAPI_ERROR_WOULD_BLOCK        < no data is not available but call is non-blocking >";  break;
-        case NSAPI_ERROR_UNSUPPORTED:           message << "NSAPI_ERROR_UNSUPPORTED        < unsupported functionality >";                          break;
-        case NSAPI_ERROR_PARAMETER:             message << "NSAPI_ERROR_PARAMETER          < invalid configuration >";                              break;
-        case NSAPI_ERROR_NO_CONNECTION:         message << "NSAPI_ERROR_NO_CONNECTION      < not connected to a network >";                         break;
-        case NSAPI_ERROR_NO_SOCKET:             message << "NSAPI_ERROR_NO_SOCKET          < socket not available for use >";                       break;
-        case NSAPI_ERROR_NO_ADDRESS:            message << "NSAPI_ERROR_NO_ADDRESS         < IP address is not known >";                            break;
-        case NSAPI_ERROR_NO_MEMORY:             message << "NSAPI_ERROR_NO_MEMORY          < memory resource not available >";                      break;
-        case NSAPI_ERROR_NO_SSID:               message << "NSAPI_ERROR_NO_SSID            < ssid not found >";                                     break;
-        case NSAPI_ERROR_DNS_FAILURE:           message << "NSAPI_ERROR_DNS_FAILURE        < DNS failed to complete successfully >";                break;
-        case NSAPI_ERROR_DHCP_FAILURE:          message << "NSAPI_ERROR_DHCP_FAILURE       < DHCP failed to complete successfully >";               break;
-        case NSAPI_ERROR_AUTH_FAILURE:          message << "NSAPI_ERROR_AUTH_FAILURE       < connection to access point failed >";                  break;
-        case NSAPI_ERROR_DEVICE_ERROR:          message << "NSAPI_ERROR_DEVICE_ERROR       < failure interfacing with the network processor >";     break;
-        case NSAPI_ERROR_IN_PROGRESS:           message << "NSAPI_ERROR_IN_PROGRESS        < operation (eg connect) in progress >";                 break;
-        case NSAPI_ERROR_ALREADY:               message << "NSAPI_ERROR_ALREADY            < operation (eg connect) already in progress >";         break;
-        case NSAPI_ERROR_IS_CONNECTED:          message << "NSAPI_ERROR_IS_CONNECTED       < socket is already connected >";                        break;
-        case NSAPI_ERROR_CONNECTION_LOST:       message << "NSAPI_ERROR_CONNECTION_LOST    < connection lost >";                                    break;
-        case NSAPI_ERROR_CONNECTION_TIMEOUT:    message << "NSAPI_ERROR_CONNECTION_TIMEOUT < connection timed out >";                               break;
-        case NSAPI_ERROR_ADDRESS_IN_USE:        message << "NSAPI_ERROR_ADDRESS_IN_USE     < Address already in use >";                             break;
-        case NSAPI_ERROR_TIMEOUT:               message << "NSAPI_ERROR_TIMEOUT            < operation timed out >";                                break;
-        case NSAPI_ERROR_BUSY:                  message << "NSAPI_ERROR_BUSY               < device is busy and cannot accept new operation >";     break;
-        default:                                message << "NSAPI_ERROR                    < unknow code >";                                        break;
+        case NSAPI_ERROR_OK:                    message += "NSAPI_ERROR_OK                 < no error >";                                           break;
+        case NSAPI_ERROR_WOULD_BLOCK:           message += "NSAPI_ERROR_WOULD_BLOCK        < no data is not available but call is non-blocking >";  break;
+        case NSAPI_ERROR_UNSUPPORTED:           message += "NSAPI_ERROR_UNSUPPORTED        < unsupported functionality >";                          break;
+        case NSAPI_ERROR_PARAMETER:             message += "NSAPI_ERROR_PARAMETER          < invalid configuration >";                              break;
+        case NSAPI_ERROR_NO_CONNECTION:         message += "NSAPI_ERROR_NO_CONNECTION      < not connected to a network >";                         break;
+        case NSAPI_ERROR_NO_SOCKET:             message += "NSAPI_ERROR_NO_SOCKET          < socket not available for use >";                       break;
+        case NSAPI_ERROR_NO_ADDRESS:            message += "NSAPI_ERROR_NO_ADDRESS         < IP address is not known >";                            break;
+        case NSAPI_ERROR_NO_MEMORY:             message += "NSAPI_ERROR_NO_MEMORY          < memory resource not available >";                      break;
+        case NSAPI_ERROR_NO_SSID:               message += "NSAPI_ERROR_NO_SSID            < ssid not found >";                                     break;
+        case NSAPI_ERROR_DNS_FAILURE:           message += "NSAPI_ERROR_DNS_FAILURE        < DNS failed to complete successfully >";                break;
+        case NSAPI_ERROR_DHCP_FAILURE:          message += "NSAPI_ERROR_DHCP_FAILURE       < DHCP failed to complete successfully >";               break;
+        case NSAPI_ERROR_AUTH_FAILURE:          message += "NSAPI_ERROR_AUTH_FAILURE       < connection to access point failed >";                  break;
+        case NSAPI_ERROR_DEVICE_ERROR:          message += "NSAPI_ERROR_DEVICE_ERROR       < failure interfacing with the network processor >";     break;
+        case NSAPI_ERROR_IN_PROGRESS:           message += "NSAPI_ERROR_IN_PROGRESS        < operation (eg connect) in progress >";                 break;
+        case NSAPI_ERROR_ALREADY:               message += "NSAPI_ERROR_ALREADY            < operation (eg connect) already in progress >";         break;
+        case NSAPI_ERROR_IS_CONNECTED:          message += "NSAPI_ERROR_IS_CONNECTED       < socket is already connected >";                        break;
+        case NSAPI_ERROR_CONNECTION_LOST:       message += "NSAPI_ERROR_CONNECTION_LOST    < connection lost >";                                    break;
+        case NSAPI_ERROR_CONNECTION_TIMEOUT:    message += "NSAPI_ERROR_CONNECTION_TIMEOUT < connection timed out >";                               break;
+        case NSAPI_ERROR_ADDRESS_IN_USE:        message += "NSAPI_ERROR_ADDRESS_IN_USE     < Address already in use >";                             break;
+        case NSAPI_ERROR_TIMEOUT:               message += "NSAPI_ERROR_TIMEOUT            < operation timed out >";                                break;
+        case NSAPI_ERROR_BUSY:                  message += "NSAPI_ERROR_BUSY               < device is busy and cannot accept new operation >";     break;
+        default:                                message += "NSAPI_ERROR                    < unknow code >";                                        break;
     }
     if(code < NSAPI_ERROR_OK) _serial->write(message.str().c_str(), message.str().size());
     #endif
