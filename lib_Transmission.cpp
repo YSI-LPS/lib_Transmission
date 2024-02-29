@@ -1,5 +1,4 @@
 #include "lib_Transmission.h"
-#include <string>
 
 Transmission::Transmission(
     #if MBED_MAJOR_VERSION > 5
@@ -403,8 +402,8 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
     ostringstream mid;
     mid << std::hex << std::uppercase << time(NULL);
-    for(char &c : mail) if(mid.str().size() < 30) mid << ((uint32_t)c);
-    string code, smtpParams[] = { "", "HELO Mbed " + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
+    for(char &c : mail) mid << ((uint32_t)c);
+    string code, smtpParams[] = { "", "HELO MBED-" + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
                                 "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mid.str() + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" };
     TCPSocket clientSMTP;
     clientSMTP.set_timeout(message.TIMEOUT);
