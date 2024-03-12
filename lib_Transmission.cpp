@@ -101,16 +101,13 @@ string Transmission::ip(string ip)
     if(!_eth) return "0.0.0.0:0";
     SocketAddress socket;
     _eth->get_ip_address(&socket);
-    string address(socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
-    address += ":" + to_string(message.PORT);
+    string address((string)(socket.get_ip_address()?socket.get_ip_address():"0.0.0.0") + ":" + to_string(message.PORT));
     if(ip == address)
     {
         _eth->get_netmask(&socket);
-        address += " ";
-        address += (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+        address += " " + (string)(socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
         _eth->get_gateway(&socket);
-        address += " ";
-        address += (socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
+        address += " " + (string)(socket.get_ip_address()?socket.get_ip_address():"0.0.0.0");
     }
     return address;
 }
