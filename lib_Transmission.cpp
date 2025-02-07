@@ -332,8 +332,9 @@ nsapi_error_t Transmission::send(const string& buffer, const enum_trans_delivery
     string ssend(buffer+"\n");
     if(_usb && !buffer.empty() && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
+        uint32_t size;
         _usb->connect();
-        if(_usb->ready()) _usb->send((uint8_t*)ssend.c_str(), ssend.size());
+        if(_usb->ready()) _usb->send_nb((uint8_t*)ssend.c_str(), ssend.size(), &size);
     }
     if(_serial  && !buffer.empty() && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
