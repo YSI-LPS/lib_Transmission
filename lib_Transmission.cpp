@@ -10,11 +10,12 @@ Transmission::Transmission(
     EthernetInterface   *eth,
     string              (*processing)(string),
     void                (*ethup)(void),
+    bool                TermChar,
     bool                caseIgnore)
-    :_serial(serial), _usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+    :_serial(serial), _usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
@@ -26,11 +27,12 @@ Transmission::Transmission(
     #endif
     USBCDC              *usb,
     string              (*processing)(string),
+    bool                TermChar,
     bool                caseIgnore)
-    :_serial(serial), _usb(usb), _processing(processing), _caseIgnore(caseIgnore)
+    :_serial(serial), _usb(usb), _processing(processing), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
@@ -43,11 +45,12 @@ Transmission::Transmission(
     EthernetInterface   *eth,
     string              (*processing)(string),
     void                (*ethup)(void),
+    bool                TermChar,
     bool                caseIgnore)
-    :_serial(serial), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+    :_serial(serial), _eth(eth), _processing(processing), _ethup(ethup), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
@@ -58,11 +61,12 @@ Transmission::Transmission(
     Serial              *serial,
     #endif
     string              (*processing)(string),
+    bool                TermChar,
     bool                caseIgnore)
-    :_serial(serial), _processing(processing), _caseIgnore(caseIgnore)
+    :_serial(serial), _processing(processing), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
     if(_serial) _serial->attach(callback(this, &Transmission::serial_event));
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
@@ -71,10 +75,11 @@ Transmission::Transmission(
     EthernetInterface   *eth,
     string              (*processing)(string),
     void                (*ethup)(void),
+    bool                TermChar,
     bool                caseIgnore)
-    :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+    :_usb(usb), _eth(eth), _processing(processing), _ethup(ethup), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
 
@@ -82,18 +87,20 @@ Transmission::Transmission(
     EthernetInterface   *eth,
     string              (*processing)(string),
     void                (*ethup)(void),
+    bool                TermChar,
     bool                caseIgnore)
-    :_eth(eth), _processing(processing), _ethup(ethup), _caseIgnore(caseIgnore)
+    :_eth(eth), _processing(processing), _ethup(ethup), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {
-    _evenThread = new Thread(osPriorityNormal, TRANSMISSION_THREAD_SIZE);
+    _evenThread = new Thread(osPriorityNormal, OS_STACK_SIZE);
     _evenThread->start(callback(&_queue, &EventQueue::dispatch_forever));
 }
     
 Transmission::Transmission(
     USBCDC              *usb,
     string              (*processing)(string),
+    bool                TermChar,
     bool                caseIgnore)
-    :_usb(usb), _processing(processing), _caseIgnore(caseIgnore)
+    :_usb(usb), _processing(processing), _TermChar(TermChar), _caseIgnore(caseIgnore)
 {}
 
 string Transmission::ip(string ip)
@@ -183,13 +190,15 @@ void Transmission::eth_event(nsapi_event_t status, intptr_t param)
     eth_status("Ethernet_event", param);
     switch(param)
     {
-        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;      break;
+        case NSAPI_STATUS_DISCONNECTED: message.status = RED_DISCONNECTED;
+                                        break;
         case NSAPI_STATUS_CONNECTING:if(message.status == BLUE_CLIENT) eth_error("clientTCP_disconnect", _clientTCP->close());
-                                        message.status = YELLOW_CONNECTING;     break;
+                                        message.status = YELLOW_CONNECTING;
+                                        break;
         case NSAPI_STATUS_GLOBAL_UP:    message.status = GREEN_GLOBAL_UP;
-                                        if(!message.CONNECT) serverTCP_connect();
-                                        else                 serverTCP_event(); break;
-        default:                                                                break;
+                                        if(!message.CONNECT) serverTCP_connect(); else serverTCP_accept();
+                                        break;
+        default:                        break;
     }
 }
 
@@ -201,16 +210,11 @@ bool Transmission::serverTCP_connect(void)
                 if(eth_error("serverTCP_listen", _serverTCP.listen()) == NSAPI_ERROR_OK)
                 {
                     _serverTCP.set_blocking(false);
-                    _serverTCP.sigio(callback(this, &Transmission::serverTCP_event));
+                    _serverTCP.sigio(callback(this, &Transmission::serverTCP_accept));
                     message.CONNECT = true;
                     if(_ethup) _queue.call(_ethup);
                 }
     return message.CONNECT;
-}
-
-void Transmission::serverTCP_event(void)
-{
-    _queue.call(this, &Transmission::serverTCP_accept);
 }
 
 void Transmission::serverTCP_accept(void)
@@ -228,7 +232,7 @@ void Transmission::serverTCP_accept(void)
             break;
             case NSAPI_ERROR_NO_CONNECTION:
                 eth_state();
-                serverTCP_event();
+                serverTCP_accept();
             break;
             default:
                 eth_state();
@@ -251,7 +255,7 @@ void Transmission::eth_state(void)
 
 void Transmission::serial_event(void)
 {
-    static char buffer[TRANSMISSION_BUFFER_SIZE] = {0};
+    static char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
     static uint16_t size = 0;
     char caractere;
     _serial->read(&caractere, 1);
@@ -263,7 +267,7 @@ void Transmission::serial_event(void)
     }
     else if((caractere > 31) && (caractere < 127))
     {
-        if(size >= (TRANSMISSION_BUFFER_SIZE-1))
+        if(size >= (MBED_CONF_LWIP_TCP_MSS-1))
             for(int i = 0; i < size; i++) buffer[i] = (i < size-1)?buffer[i+1]:caractere;
         else buffer[size++] = caractere;
     }
@@ -275,32 +279,32 @@ Transmission::enum_trans_status Transmission::recv(void)
     {
         if(_usb->ready())
         {
-            uint8_t buffer[TRANSMISSION_BUFFER_SIZE] = {0};
+            uint8_t buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
             uint32_t ack = 0, size = 0;
             do{
                 ack = NSAPI_ERROR_OK;
                 _usb->receive_nb(&buffer[size], 1, &ack);   // un peu plus rapide sur les petits transferts
                 size += ack;
-            }while((ack > NSAPI_ERROR_OK) && (size < TRANSMISSION_BUFFER_SIZE-1) && (buffer[size-ack] != '\n'));
+            }while((ack > NSAPI_ERROR_OK) && (size < MBED_CONF_LWIP_TCP_MSS-1) && (buffer[size-ack] != '\n'));
             if(size && _processing) preprocessing((char *)buffer, USB_DELIVERY);
         } else _usb->connect();
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
-        char buffer[TRANSMISSION_BUFFER_SIZE] = {0};
+        char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
         nsapi_error_t ack = 0, size = 0;
         do{
-            ack = _clientTCP->recv(&buffer[size], TRANSMISSION_BUFFER_SIZE-size);
+            ack = _clientTCP->recv(&buffer[size], MBED_CONF_LWIP_TCP_MSS-size);
             if(ack > NSAPI_ERROR_OK) size += ack;
-        }while((ack == 536) && (size < TRANSMISSION_BUFFER_SIZE));
+        }while((ack == MBED_CONF_LWIP_TCP_MSS) && (size < MBED_CONF_LWIP_TCP_MSS));   // MBED_CONF_LWIP_TCP_MSS == 536 by default
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
         if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION))
         {
             eth_error("clientTCP_disconnect", _clientTCP->close());
             eth_state();
-            serverTCP_event();
+            serverTCP_accept();
         }
-        if(size && _processing) preprocessing(buffer, TCP_DELIVERY);
+        if(size && _processing) preprocessing(buffer, strstr(buffer, " HTTP/")?HTTP_DELIVERY:TCP_DELIVERY);
     }
     else if(!_usb) for(int i = 0; ((i < 10) && (message.status != BLUE_CLIENT)); i++) ThisThread::sleep_for(10ms);
     return message.status;
@@ -308,45 +312,58 @@ Transmission::enum_trans_status Transmission::recv(void)
 
 void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
 {
-    string cmd(buffer);
-    for(char &c : cmd) if(_caseIgnore && (c >= 'a') && (c <= 'z')) c += 'A'-'a';
-    if((cmd.find("HOST: ") != string::npos) || (cmd.find("Host: ") != string::npos))
-        send(_processing(cmd), HTTP_DELIVERY);
-    else if(!cmd.empty() && (cmd[0] != 22))
+    for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++) if(_caseIgnore && (buffer[i] >= 'a') && (buffer[i] <= 'z')) buffer[i] += 'A'-'a';
+    if(delivery == HTTP_DELIVERY) send(_processing(buffer), delivery);
+    else if((buffer[0] != 0) && (buffer[0] != 22))
     {
-        for(char &c : cmd) if(c == '\n') c = ';';
-        istringstream srecv(cmd);
-        string ssend;
-        while(getline(srecv, cmd, ';'))
+        int ncmd = 1;
+        for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++)
         {
-            string process = _processing(cmd);
-            if(!process.empty()) ssend += (ssend.size() > 0)?(' '+process):process;
+            if((buffer[i] == '\n') || (buffer[i] == ';'))
+            {
+                buffer[i] = ';';
+                ncmd++;
+            }
         }
-        send(ssend, delivery);
+        if(ncmd > 1)
+        {
+            string cmd, ssend;
+            istringstream srecv(buffer);
+            while(getline(srecv, cmd, ';'))
+            {
+                cmd = _processing(cmd);
+                if(!cmd.empty()) ssend += (ssend.empty()?"":" ")+cmd;
+            }
+            if(_TermChar) ssend += "\n";
+            send(ssend, delivery);
+        }
+        else if(send(_processing(buffer), delivery) > 0) if(_TermChar) send("\n", delivery);
     }
 }
 
-nsapi_error_t Transmission::send(const string& buffer, const enum_trans_delivery& delivery)
+nsapi_error_t Transmission::send(const string& ssend, const enum_trans_delivery& delivery)
 {
     nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
-    string ssend(buffer+"\n");
-    if(_usb && !buffer.empty() && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
+    if(ssend.empty()) return 0;
+    if(_usb && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
         uint32_t size;
         _usb->connect();
         if(_usb->ready()) _usb->send_nb((uint8_t*)ssend.c_str(), ssend.size(), &size);
     }
-    if(_serial  && !buffer.empty() && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
+    if(_serial && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
     if(_eth && ((delivery == TCP_DELIVERY) || (delivery == HTTP_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
-        if((message.status == BLUE_CLIENT) && !buffer.empty())
-            eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
-        if(delivery == HTTP_DELIVERY)
+        if(message.status == BLUE_CLIENT)
         {
-            eth_error("clientTCP_disconnect", _clientTCP->close());
-            eth_state();
-            serverTCP_event();
+            eth_error("clientTCP_send", ack = _clientTCP->send(ssend.c_str(), ssend.size()));
+            if(delivery == HTTP_DELIVERY)
+            {
+                eth_error("clientTCP_disconnect", _clientTCP->close());
+                eth_state();
+                serverTCP_accept();
+            }
         }
     }
     return ack;
@@ -461,7 +478,7 @@ time_t Transmission::ntp(const char* server)
 intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 {
     #ifndef NDEBUG
-    string message("\n" + source + "[" + to_string(code) + "] ")
+    string message("\n" + source + "[" + to_string(code) + "] ");
     switch(code)
     {
         case NSAPI_STATUS_LOCAL_UP:             message += "NSAPI_STATUS_LOCAL_UP          < local IP address set >";       break;
@@ -470,7 +487,7 @@ intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
         case NSAPI_STATUS_CONNECTING:           message += "NSAPI_STATUS_CONNECTING        < connecting to network >";      break;
         case NSAPI_STATUS_ERROR_UNSUPPORTED:    message += "NSAPI_STATUS_ERROR_UNSUPPORTED < unsupported functionality >";  break;
     }
-    _serial->write(message.str().c_str(), message.str().size());
+    _serial->write(message.c_str(), message.size());
     #endif
     return code;
 }
@@ -478,7 +495,7 @@ intptr_t Transmission::eth_status(const string& source, const intptr_t& code)
 nsapi_error_t Transmission::eth_error(const string& source, const nsapi_error_t& code)
 {
     #ifndef NDEBUG
-    string message("\n" + source + "[" + to_string(code) + "] ")
+    string message("\n" + source + "[" + to_string(code) + "] ");
     switch(code)
     {
         case NSAPI_ERROR_OK:                    message += "NSAPI_ERROR_OK                 < no error >";                                           break;
@@ -504,7 +521,7 @@ nsapi_error_t Transmission::eth_error(const string& source, const nsapi_error_t&
         case NSAPI_ERROR_BUSY:                  message += "NSAPI_ERROR_BUSY               < device is busy and cannot accept new operation >";     break;
         default:                                message += "NSAPI_ERROR                    < unknow code >";                                        break;
     }
-    if(code < NSAPI_ERROR_OK) _serial->write(message.str().c_str(), message.str().size());
+    if(code < NSAPI_ERROR_OK) _serial->write(message.c_str(), message.size());
     #endif
     return code;
 }
