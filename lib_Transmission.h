@@ -50,8 +50,6 @@
 #include "USBCDC.h"
 #include "EthernetInterface.h"
 
-#define TRANSMISSION_BUFFER_SIZE    1072                // taille des buffers de reception
-#define TRANSMISSION_THREAD_SIZE    OS_STACK_SIZE       // taille du thread transmission
 #define TRANSMISSION_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
 #define TRANSMISSION_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
@@ -86,6 +84,7 @@ class Transmission
             EthernetInterface   *eth,
             string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -99,6 +98,7 @@ class Transmission
             #endif
             USBCDC              *usb,
             string              (*processing)(string) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -113,6 +113,7 @@ class Transmission
             EthernetInterface   *eth,
             string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -123,6 +124,7 @@ class Transmission
             EthernetInterface   *eth,
             string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -135,6 +137,7 @@ class Transmission
             Serial              *serial,
             #endif
             string              (*processing)(string) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -144,6 +147,7 @@ class Transmission
             EthernetInterface   *eth,
             string              (*processing)(string) = NULL,
             void                (*ethup)(void) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
         *
@@ -152,6 +156,7 @@ class Transmission
         Transmission(
             USBCDC              *usb,
             string              (*processing)(string) = NULL,
+            bool                TermChar = true,
             bool                caseIgnore = true);
         /** Configure the TCP connection
         *
@@ -177,19 +182,19 @@ class Transmission
         enum_trans_status   recv(void);
         /** send the buffer to the specified transmission delivery
         *
-        * @param buffer sent over transmission
+        * @param ssend sent over transmission
         * @param delivery of the transmission
         * @returns 
         */
-        nsapi_error_t       send(const string& buffer="", const enum_trans_delivery& delivery=ANY_DELIVERY);
+        nsapi_error_t       send(const string& ssend, const enum_trans_delivery& delivery=ANY_DELIVERY);
         /** send a request to a server at the specified port
         *
-        * @param request sent to server
+        * @param ssend sent to server
         * @param server ip
-        * @param server port
+        * @param port port
         * @returns server response
         */
-        string              get(const string& buffer, const string& server, const int& port=80);
+        string              get(const string& ssend, const string& server, const int& port=80);
         /** send an email to an smtp server
         *
         * @param mail is the recipient's email
@@ -226,6 +231,7 @@ class Transmission
         EthernetInterface   *_eth = NULL;
         USBCDC              *_usb = NULL;
         bool                _caseIgnore = false;
+        bool                _TermChar = false;
 
         void                serial_event(void);
 
@@ -237,7 +243,6 @@ class Transmission
 
         bool                serverTCP_connect(void);
         void                serverTCP_accept(void);
-        void                serverTCP_event(void);
 
         void                (*_ethup)(void);
         string              (*_processing)(string);
