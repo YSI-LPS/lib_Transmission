@@ -259,17 +259,12 @@ void Transmission::serial_event(void)
     static uint16_t size = 0;
     char caractere;
     _serial->read(&caractere, 1);
-    if(caractere == '\n')
+    if(size < (MBED_CONF_LWIP_TCP_MSS-1)) buffer[size++] = caractere;
+    if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((caractere == '\n') && _TermChar))
     {
         buffer[size] = '\0';
         size = 0;
         if(_processing) _queue.call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
-    }
-    else if((caractere > 31) && (caractere < 127))
-    {
-        if(size >= (MBED_CONF_LWIP_TCP_MSS-1))
-            for(int i = 0; i < size; i++) buffer[i] = (i < size-1)?buffer[i+1]:caractere;
-        else buffer[size++] = caractere;
     }
 }
 
@@ -316,28 +311,28 @@ void Transmission::preprocessing(char *buffer, const enum_trans_delivery deliver
     if(delivery == HTTP_DELIVERY) send(_processing(buffer), delivery);
     else if((buffer[0] != 0) && (buffer[0] != 22))
     {
-        int ncmd = 1;
+        int ncmd = 0;
         for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++)
         {
             if((buffer[i] == '\n') || (buffer[i] == ';'))
             {
-                buffer[i] = ';';
+                buffer[i] = '\n';
                 ncmd++;
             }
         }
-        if(ncmd > 1)
+        if(ncmd > 1) // slower & more memory
         {
             string cmd, ssend;
             istringstream srecv(buffer);
-            while(getline(srecv, cmd, ';'))
+            while(getline(srecv, cmd, '\n'))
             {
-                cmd = _processing(cmd);
+                cmd = _processing(cmd+'\n');
                 if(!cmd.empty()) ssend += (ssend.empty()?"":" ")+cmd;
             }
-            if(_TermChar) ssend += "\n";
+            if(!ssend.empty() && _TermChar) ssend += "\n";
             send(ssend, delivery);
         }
-        else if(send(_processing(buffer), delivery) > 0) if(_TermChar) send("\n", delivery);
+        else if(send(_processing(buffer), delivery) > 0) if(_TermChar) send("\n", delivery); // faster & less memory
     }
 }
 
