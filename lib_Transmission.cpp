@@ -257,10 +257,8 @@ void Transmission::serial_event(void)
 {
     static char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
     static uint16_t size = 0;
-    char caractere;
-    _serial->read(&caractere, 1);
-    if(size < (MBED_CONF_LWIP_TCP_MSS-1)) buffer[size++] = caractere;
-    if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((caractere == '\n') && _TermChar))
+    _serial->read(&buffer[size++], 1);
+    if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((buffer[size-1] == '\n') && _TermChar))
     {
         buffer[size] = '\0';
         size = 0;
@@ -274,19 +272,25 @@ Transmission::enum_trans_status Transmission::recv(void)
     {
         if(_usb->ready())
         {
-            uint8_t buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
-            uint32_t ack = 0, size = 0;
-            do{
-                ack = NSAPI_ERROR_OK;
-                _usb->receive_nb(&buffer[size], 1, &ack);   // un peu plus rapide sur les petits transferts
+            static uint8_t buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
+            static uint32_t size = 0;
+            uint32_t ack = NSAPI_ERROR_OK;
+            _usb->receive_nb(&buffer[size], MBED_CONF_LWIP_TCP_MSS-1-size, &ack);   // receive_nb() faster than receive() for small transferts
+            if(ack > NSAPI_ERROR_OK)
+            {
                 size += ack;
-            }while((ack > NSAPI_ERROR_OK) && (size < MBED_CONF_LWIP_TCP_MSS-1) && (buffer[size-ack] != '\n'));
-            if(size && _processing) preprocessing((char *)buffer, USB_DELIVERY);
+                if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((buffer[size-1] == '\n') && _TermChar))
+                {
+                    buffer[size] = '\0';
+                    size = 0;
+                    if(_processing) preprocessing((char *)buffer, USB_DELIVERY);
+                }
+            }
         } else _usb->connect();
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
-        char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
+        char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};  // not static because all TCP data was send in one time
         nsapi_error_t ack = 0, size = 0;
         do{
             ack = _clientTCP->recv(&buffer[size], MBED_CONF_LWIP_TCP_MSS-size);
@@ -307,44 +311,37 @@ Transmission::enum_trans_status Transmission::recv(void)
 
 void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
 {
-    for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++) if(_caseIgnore && (buffer[i] >= 'a') && (buffer[i] <= 'z')) buffer[i] += 'A'-'a';
-    if(delivery == HTTP_DELIVERY) send(_processing(buffer), delivery);
-    else if((buffer[0] != 0) && (buffer[0] != 22))
+    for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++)
     {
-        int ncmd = 0;
-        for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++)
+        if(_caseIgnore && (buffer[i] >= 'a') && (buffer[i] <= 'z')) buffer[i] += 'A'-'a';
+        if((delivery != HTTP_DELIVERY) && (buffer[i] == ';'))       buffer[i] = '\n';
+    }
+    if(delivery == HTTP_DELIVERY) send(_processing(buffer), HTTP_DELIVERY);
+    else if(buffer[0] != 0)
+    {
+        string cmd, ssend;
+        istringstream srecv(buffer);
+        while(getline(srecv, cmd, '\n'))
         {
-            if((buffer[i] == '\n') || (buffer[i] == ';'))
-            {
-                buffer[i] = '\n';
-                ncmd++;
-            }
+            cmd = _processing(cmd += '\n');
+            ssend += ((ssend.size() && cmd.size())?" ":"")+cmd;
         }
-        if(ncmd > 1) // slower & more memory
+        if(ssend.size())
         {
-            string cmd, ssend;
-            istringstream srecv(buffer);
-            while(getline(srecv, cmd, '\n'))
-            {
-                cmd = _processing(cmd+'\n');
-                if(!cmd.empty()) ssend += (ssend.empty()?"":" ")+cmd;
-            }
-            if(!ssend.empty() && _TermChar) ssend += "\n";
+            if(_TermChar) ssend += "\n";
             send(ssend, delivery);
         }
-        else if(send(_processing(buffer), delivery) > 0) if(_TermChar) send("\n", delivery); // faster & less memory
     }
 }
 
 nsapi_error_t Transmission::send(const string& ssend, const enum_trans_delivery& delivery)
 {
-    nsapi_error_t ack = NSAPI_ERROR_WOULD_BLOCK;
     if(ssend.empty()) return 0;
+    uint32_t ack = 0;
     if(_usb && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
-        uint32_t size;
-        _usb->connect();
-        if(_usb->ready()) _usb->send_nb((uint8_t*)ssend.c_str(), ssend.size(), &size);
+        if(_usb->ready()) ack = _usb->send((uint8_t*)ssend.c_str(), ssend.size()); // send() is blocking (No ISR) but send_nb() only for data size <= CDC_MAX_PACKET_SIZE
+        else _usb->connect();
     }
     if(_serial && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
         ack = _serial->write(ssend.c_str(), ssend.length());
