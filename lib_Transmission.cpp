@@ -262,7 +262,9 @@ void Transmission::serial_event(void)
     {
         buffer[size] = '\0';
         size = 0;
-        if(_processing) _queue.call(this, &Transmission::preprocessing, buffer, SERIAL_DELIVERY);
+        char copy[MBED_CONF_LWIP_TCP_MSS] = {0};
+        strcpy(copy, buffer);                                                                   // making a copy gives time to the queue to take the buffer before it is modified
+        if(_processing) _queue.call(this, &Transmission::preprocessing, copy, SERIAL_DELIVERY); // preprocessing function deferring from ISR context
     }
 }
 
