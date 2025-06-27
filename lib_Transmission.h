@@ -6,33 +6,48 @@
 *
 * Example:
 * @code
-* #define MBED_PROJECT    "Transmission"
-* 
 * #include "lib_Transmission.h"
 * 
-* #if MBED_MAJOR_VERSION > 5
-* UnbufferedSerial    pc(USBTX, USBRX, 230400);
-* #else
-* Serial              pc(USBTX, USBRX, 230400);
-* #endif
+* #define MBED_PROJECT      "Transmission"
+* #define SERIAL_BAUDRATE   230400
 * 
-* string              transmission_processing(string);
-* Transmission        transmission(&pc, &transmission_processing);
+* string      processing(string);
+* 
+* struct {
+*             const string        idn;
+*             UnbufferedSerial    *ss;
+*             USBCDC              *usb;
+*             EthernetInterface   *eth;
+*             Transmission        *tr;
+* } uc = {
+*             MBED_PROJECT + ((string)" Rev. ") + MBED_STRINGIFY(TARGET_NAME) + " " + __DATE__ + " " + __TIME__ + " MbedOS " + to_string(MBED_VERSION),
+*             #if MBED_MAJOR_VERSION > 5
+*             new UnbufferedSerial(USBTX, USBRX, SERIAL_BAUDRATE),
+*             #else
+*             new Serial(USBTX, USBRX, SERIAL_BAUDRATE),
+*             #endif
+*             new USBCDC(false),
+*             new EthernetInterface,
+*             new Transmission(uc.ss, uc.usb, uc.eth, &processing)
+* };
 * 
 * int main(void)
 * {
-*     while(1) ThisThread::sleep_for(200ms);
+*     uc.tr->ip(true, "192.168.1.25");
+*     while(1) uc.tr->recv();
 * }
 * 
-* string transmission_processing(string cmd)
+* string processing(string cmd)
 * {
 *     ostringstream ssend;
 *     ssend << fixed;
 *     ssend.precision(2);
 *     if(cmd.empty());
-*     else if(cmd == "*IDN?")
-*         ssend << MBED_PROJECT << ", Mbed OS " << MBED_VERSION << ", Version dated, " << __DATE__ << ", " << __TIME__;
-*     else if(cmd[cmd.size()-1] == '?')
+*     else if(cmd == "*IDN?\n")
+*         return uc.idn;
+*     else if(cmd == "MAC?\n")
+*         ssend << "MAC\t[" << (uc.eth->get_mac_address()?uc.eth->get_mac_address():"00:00:00:00:00:00") << "]";
+*     else if(cmd.find("?") != string::npos)
 *         ssend << "incorrect requeste [" << cmd << "]";
 *     return ssend.str();
 * }
@@ -50,8 +65,9 @@
 #include "USBCDC.h"
 #include "EthernetInterface.h"
 
-#define TRANSMISSION_SMTP_SERVER    "129.175.212.70"    // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
-#define TRANSMISSION_NTP_SERVER     "129.175.34.43"     // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
+#define TRANSMISSION_BUFFER_SIZE    (2 * MBED_CONF_LWIP_TCP_MSS)    // MBED_CONF_LWIP_TCP_MSS == 536 pas suffisant avec les entetes HTTP souvent > 536 octets
+#define TRANSMISSION_SMTP_SERVER    "129.175.212.70"                // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("smtp.u-psud.fr")
+#define TRANSMISSION_NTP_SERVER     "129.175.34.43"                 // IP sinon obligation d'utilisation du DNS avec _eth.getHostByName("ntp.u-psud.fr")
 
 /** Transmission class
  */
