@@ -255,14 +255,14 @@ void Transmission::eth_state(void)
 
 void Transmission::serial_event(void)
 {
-    static char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
+    static char buffer[TRANSMISSION_BUFFER_SIZE] = {0};
     static uint16_t size = 0;
     _serial->read(&buffer[size++], 1);
-    if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((buffer[size-1] == '\n') && _TermChar))
+    if((size == (TRANSMISSION_BUFFER_SIZE-1)) || ((buffer[size-1] == '\n') && _TermChar))
     {
         buffer[size] = '\0';
         size = 0;
-        char copy[MBED_CONF_LWIP_TCP_MSS] = {0};
+        char copy[TRANSMISSION_BUFFER_SIZE] = {0};
         strcpy(copy, buffer);                                                                   // making a copy gives time to the queue to take the buffer before it is modified
         if(_processing) _queue.call(this, &Transmission::preprocessing, copy, SERIAL_DELIVERY); // preprocessing function deferring from ISR context
     }
@@ -274,14 +274,14 @@ Transmission::enum_trans_status Transmission::recv(void)
     {
         if(_usb->ready())
         {
-            static uint8_t buffer[MBED_CONF_LWIP_TCP_MSS] = {0};
+            static uint8_t buffer[TRANSMISSION_BUFFER_SIZE] = {0};
             static uint32_t size = 0;
             uint32_t ack = NSAPI_ERROR_OK;
-            _usb->receive_nb(&buffer[size], MBED_CONF_LWIP_TCP_MSS-1-size, &ack);   // receive_nb() faster than receive() for small transferts
+            _usb->receive_nb(&buffer[size], TRANSMISSION_BUFFER_SIZE-1-size, &ack);   // receive_nb() faster than receive() for small transferts
             if(ack > NSAPI_ERROR_OK)
             {
                 size += ack;
-                if((size == (MBED_CONF_LWIP_TCP_MSS-1)) || ((buffer[size-1] == '\n') && _TermChar))
+                if((size == (TRANSMISSION_BUFFER_SIZE-1)) || ((buffer[size-1] == '\n') && _TermChar))
                 {
                     buffer[size] = '\0';
                     size = 0;
@@ -292,12 +292,12 @@ Transmission::enum_trans_status Transmission::recv(void)
     }
     if(eth_connect() && (message.status == BLUE_CLIENT))
     {
-        char buffer[MBED_CONF_LWIP_TCP_MSS] = {0};  // not static because all TCP data was send in one time
+        char buffer[TRANSMISSION_BUFFER_SIZE] = {0};  // not static because all TCP data was send in one time
         nsapi_error_t ack = 0, size = 0;
         do{
-            ack = _clientTCP->recv(&buffer[size], MBED_CONF_LWIP_TCP_MSS-size);
+            ack = _clientTCP->recv(&buffer[size], TRANSMISSION_BUFFER_SIZE-size);
             if(ack > NSAPI_ERROR_OK) size += ack;
-        }while((ack == MBED_CONF_LWIP_TCP_MSS) && (size < MBED_CONF_LWIP_TCP_MSS));   // MBED_CONF_LWIP_TCP_MSS == 536 by default
+        }while((ack == MBED_CONF_LWIP_TCP_MSS) && (size < TRANSMISSION_BUFFER_SIZE));
         if(ack < NSAPI_ERROR_WOULD_BLOCK) eth_error("clientTCP_recv", ack);
         if((ack == NSAPI_ERROR_OK) || (ack == NSAPI_ERROR_NO_CONNECTION))
         {
@@ -313,7 +313,7 @@ Transmission::enum_trans_status Transmission::recv(void)
 
 void Transmission::preprocessing(char *buffer, const enum_trans_delivery delivery)
 {
-    for(int i = 0; (buffer[i] != 0) && (i < MBED_CONF_LWIP_TCP_MSS); i++)
+    for(int i = 0; (buffer[i] != 0) && (i < TRANSMISSION_BUFFER_SIZE); i++)
     {
         if(_caseIgnore && (buffer[i] >= 'a') && (buffer[i] <= 'z')) buffer[i] += 'A'-'a';
         if((delivery != HTTP_DELIVERY) && (buffer[i] == ';'))       buffer[i] = '\n';
