@@ -342,7 +342,20 @@ nsapi_error_t Transmission::send(const string& ssend, const enum_trans_delivery&
     uint32_t ack = 0;
     if(_usb && ((delivery == USB_DELIVERY) || (delivery == ANY_DELIVERY)))
     {
-        if(_usb->ready()) ack = _usb->send((uint8_t*)ssend.c_str(), ssend.size()); // send() is blocking (No ISR) but send_nb() only for data size <= CDC_MAX_PACKET_SIZE
+        if(_usb->ready())
+        {
+            // send() is blocking (No ISR) but send_nb() only for data size < CDC_MAX_PACKET_SIZE
+            // send() and send_nb() MbedOS bug and dont work if data size == CDC_MAX_PACKET_SIZE
+            // To fixe bug, use send_nb() to split with CDC_MAX_PACKET_SIZE-1 packets
+            uint32_t packets = (ssend.size()/(CDC_MAX_PACKET_SIZE-1))+1;
+            for(uint32_t n = 0; n < packets; n++)
+            {
+                uint32_t nack = 0, size = ssend.substr(n*(CDC_MAX_PACKET_SIZE-1)).size();
+                if(size >= CDC_MAX_PACKET_SIZE) size = CDC_MAX_PACKET_SIZE-1;
+                for(uint32_t i = 0;!nack && (i < 100);i++) _usb->send_nb((uint8_t*)ssend.substr(n*(CDC_MAX_PACKET_SIZE-1), size).c_str(), size, &nack);
+                ack += nack;
+            }
+        }
         else _usb->connect();
     }
     if(_serial && ((delivery == SERIAL_DELIVERY) || (delivery == ANY_DELIVERY)))
