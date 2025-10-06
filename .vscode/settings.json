@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "mstd_iterator": "cpp",
+        "mstd_atomic": "cpp"
+    }
+}
