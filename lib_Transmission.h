@@ -98,8 +98,8 @@ class Transmission
             #endif
             USBCDC              *usb,
             EthernetInterface   *eth,
-            string              (*processing)(string) = NULL,
-            void                (*ethup)(void) = NULL,
+            string              (*processing)(string) = nullptr,
+            void                (*ethup)(void) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -113,7 +113,7 @@ class Transmission
             Serial              *serial,
             #endif
             USBCDC              *usb,
-            string              (*processing)(string) = NULL,
+            string              (*processing)(string) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -127,8 +127,8 @@ class Transmission
             Serial              *serial,
             #endif
             EthernetInterface   *eth,
-            string              (*processing)(string) = NULL,
-            void                (*ethup)(void) = NULL,
+            string              (*processing)(string) = nullptr,
+            void                (*ethup)(void) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -138,8 +138,8 @@ class Transmission
         Transmission(
             USBCDC              *usb,
             EthernetInterface   *eth,
-            string              (*processing)(string) = NULL,
-            void                (*ethup)(void) = NULL,
+            string              (*processing)(string) = nullptr,
+            void                (*ethup)(void) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -152,7 +152,7 @@ class Transmission
             #else
             Serial              *serial,
             #endif
-            string              (*processing)(string) = NULL,
+            string              (*processing)(string) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -161,8 +161,8 @@ class Transmission
         */
         Transmission(
             EthernetInterface   *eth,
-            string              (*processing)(string) = NULL,
-            void                (*ethup)(void) = NULL,
+            string              (*processing)(string) = nullptr,
+            void                (*ethup)(void) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** make new Transmission instance
@@ -171,7 +171,7 @@ class Transmission
         */
         Transmission(
             USBCDC              *usb,
-            string              (*processing)(string) = NULL,
+            string              (*processing)(string) = nullptr,
             bool                TermChar = true,
             bool                caseIgnore = true);
         /** Configure the TCP connection
@@ -237,15 +237,15 @@ class Transmission
 
     private:
         #if MBED_MAJOR_VERSION > 5
-        UnbufferedSerial    *_serial = NULL;
+        UnbufferedSerial    *_serial = nullptr;
         #else
-        Serial              *_serial = NULL;
+        Serial              *_serial = nullptr;
         #endif
-        TCPSocket           _serverTCP, *_clientTCP = NULL;
-        Thread              *_evenThread = NULL;
+        TCPSocket           _serverTCP, *_clientTCP = nullptr;
+        Thread              *_evenThread = nullptr;
         EventQueue          _queue;
-        EthernetInterface   *_eth = NULL;
-        USBCDC              *_usb = NULL;
+        EthernetInterface   *_eth = nullptr;
+        USBCDC              *_usb = nullptr;
         bool                _caseIgnore = false;
         bool                _TermChar = false;
 
