@@ -134,7 +134,7 @@ string Transmission::ip(const bool set, const char* ip, const uint16_t port, con
         if(message.PORT != port)
         {
             message.CONNECT = false;
-            _serverTCP.sigio(NULL);
+            _serverTCP.sigio(nullptr);
             eth_error("serverTCP_close", _serverTCP.close());
         }
         eth_error("Ethernet_disconnect", _eth->disconnect());
@@ -423,7 +423,7 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
 {
     if((!_eth) || (!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP) || mail.empty()) return false;
     ostringstream mid;
-    mid << std::hex << std::uppercase << time(NULL);
+    mid << std::hex << std::uppercase << time(nullptr);
     for(char &c : mail) mid << ((uint32_t)c);
     string code, smtpParams[] = { "", "HELO MBED-" + from + "\r\n", "MAIL FROM:<Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\n", "RCPT TO:<" + mail + ">\r\n", "DATA\r\n", 
                                 "From:\"Mbed " + from + "\" <Mbed." + from + "@UNIVERSITE-PARIS-SACLAY.FR>\r\nTo:<" + mail + ">\r\nSubject:" + subject + "\r\nMessage-Id:<" + mid.str() + ">\r\n" + data + "\r\n.\r\n", "QUIT\r\n" };
@@ -456,7 +456,7 @@ bool Transmission::smtp(string mail, string from, string subject, string data, c
 time_t Transmission::ntp(const char* server)
 {
     if(!_eth) return 0;
-    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return time(NULL);
+    if((!message.DHCP) || (_eth->get_connection_status() != NSAPI_STATUS_GLOBAL_UP)) return time(nullptr);
     time_t timeStamp = 0;
     UDPSocket clientNTP;
     clientNTP.set_timeout(message.TIMEOUT);
@@ -468,7 +468,7 @@ time_t Transmission::ntp(const char* server)
         if(sSERVER != TRANSMISSION_NTP_SERVER) eth_error("eth_gethostbyname", _eth->gethostbyname(sSERVER.c_str(), &aSERVER));
         if(eth_error("clientNTP_send", clientNTP.sendto(aSERVER, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
         {
-            if(eth_error("clientNTP_recv", clientNTP.recvfrom(NULL, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
+            if(eth_error("clientNTP_recv", clientNTP.recvfrom(nullptr, (void*)buffer, sizeof(buffer))) > NSAPI_ERROR_OK)
             {
                 timeStamp = ((buffer[10] & 0xFF) << 24) | ((buffer[10] & 0xFF00) << 8) | ((buffer[10] & 0xFF0000UL) >> 8) | ((buffer[10] & 0xFF000000UL) >> 24);
                 timeStamp -= 2208985200U;   // 01/01/1970 Europe
